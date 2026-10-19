@@ -55,6 +55,7 @@ with st.sidebar:
     stats = memory.stats()
     st.metric("Saved memories", stats["memories"])
     st.metric("Learning examples", stats["lessons"])
+    st.metric("Ghost Knowledge", stats.get("ghost_knowledge", 0))
     st.caption("On Streamlit Community Cloud, local files may reset after a restart or redeploy.")
     with st.expander("Review saved memories", expanded=False):
         saved = memory.memories()
@@ -66,11 +67,21 @@ with st.sidebar:
             if st.button("Forget", key=f"forget_{item['key']}"):
                 memory.forget(item["key"])
                 st.rerun()
+    with st.expander("Ghost Knowledge", expanded=False):
+        saved_knowledge = memory.search_ghost_knowledge("", limit=20)
+        if not saved_knowledge:
+            st.caption("No web research saved yet. EvolveAI searches only when a question appears outside its known rules and saved knowledge.")
+        for item in saved_knowledge:
+            st.markdown(f"**{item['title']}** · {item['status']}")
+            st.write(item["fact"])
+            st.caption(f"Relevance score: {item['confidence']:.0%} · Last checked: {item['last_checked_at'][:10]}")
+            st.markdown(f"[Open source]({item['source_url']})")
     with st.expander("How it learns"):
-        st.write("1. You explicitly teach it facts or preferences.")
-        st.write("2. Each chat turn is recorded.")
-        st.write("3. Your feedback changes which examples are retrieved later.")
-        st.write("4. It does not train model weights or run generated code.")
+        st.write("1. It checks programmed rules, personal memory, and Ghost Knowledge first.")
+        st.write("2. If a factual question is outside its knowledge, it tries free public web search.")
+        st.write("3. It stores page excerpts and source links as research candidates, not guaranteed facts.")
+        st.write("4. It reuses saved evidence for similar questions, but refreshes time-sensitive questions.")
+        st.write("5. Feedback adds examples; it does not train model weights or execute generated code.")
     if st.button("Clear this chat", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
@@ -111,7 +122,7 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("Thinking through my instructions…"):
+        with st.spinner("Checking what I know… researching the web only if needed…"):
             result = agent.run(prompt)
         st.markdown(result["answer"])
         st.caption("Was this useful? Your feedback changes which examples I use later.")
