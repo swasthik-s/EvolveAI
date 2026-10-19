@@ -6,7 +6,7 @@ A mobile-first, instruction-driven chat agent built for Streamlit Community Clou
 
 EvolveAI does **not** call OpenAI or any other hosted language model. Its first version uses explicit Python instructions and deterministic rules. It can store facts the user teaches it, retrieve relevant past examples, handle basic arithmetic, and use 👍 / 👎 feedback to influence which examples are surfaced in future replies. For factual questions outside its current rules and saved knowledge, it can try free, keyless public web search and save source excerpts as Ghost Knowledge.
 
-This is an honest prototype, not AGI. Feedback does not train model weights, and a rule-based system cannot yet answer arbitrary open-ended questions like a general-purpose language model. Web research is extractive: it retrieves public search results, reads some pages, ranks text by keyword overlap, and stores source-linked candidates. It does not semantically verify facts like a human or an LLM.
+This is an honest prototype, not AGI. Feedback does not train model weights, and a rule-based system cannot yet answer arbitrary open-ended questions like a general-purpose language model. Web research now separates retrieval from response generation: it extracts paragraph text, filters boilerplate, ranks relevant sentences, removes duplicates, builds a concise evidence-based answer, and shows source links. This is a deterministic evidence-processing engine, not human-like semantic reasoning; its scores are heuristics and can still miss context or make mistakes.
 
 ## Deploy on Streamlit Community Cloud
 
@@ -29,8 +29,9 @@ streamlit run app.py
 1. The agent follows the policies in `evolveai/instructions.py`.
 2. It checks programmed rules, personal memories, and Ghost Knowledge before researching.
 3. For a factual question that appears outside its known rules, it tries keyless public web search.
-4. It extracts text from a few public pages and stores excerpts, source URLs, timestamps, and heuristic relevance scores as Ghost Knowledge candidates.
-5. Similar stable questions can reuse saved excerpts; time-sensitive questions are researched again.
+4. It extracts page paragraphs, ranks relevant sentences, filters common navigation noise, and synthesizes a short answer with source links.
+5. The full relevant excerpts and source URLs are saved as Ghost Knowledge candidates; later questions reuse and process that evidence rather than dumping the raw page text.
+6. Time-sensitive questions are researched again.
 6. User feedback creates positive or negative examples that can influence future retrieval.
 7. The sidebar lets the user review personal memories and saved Ghost Knowledge.
 
@@ -42,4 +43,4 @@ The app stores data in `data/evolveai.db`. Streamlit Community Cloud's local fil
 
 ## Tests
 
-Run `pytest -q` locally. The project includes tests for memory, Ghost Knowledge retrieval, and the uncertainty-triggered research decision; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
+Run `pytest -q` locally. The project includes tests for memory, Ghost Knowledge retrieval, the uncertainty-triggered research decision, and deterministic evidence synthesis; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
