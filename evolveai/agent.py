@@ -149,7 +149,7 @@ class EvolveAgent:
         low = prompt.strip().lower()
         if len(low) < 8 or len(low) > 400:
             return False
-        if re.match(r"^(?:please )?remember\\b|^(?:my name is|call me|i prefer)\\b", low):
+        if re.match(r"^(?:please )?remember\b|^(?:my name is|call me|i prefer)\b", low):
             return False
         if low.startswith(("what do you remember", "show my memories", "what have you learned about me")):
             return False
@@ -166,10 +166,10 @@ class EvolveAgent:
                 return (
                     "I found relevant **Ghost Knowledge** from an earlier research session. "
                     "I’m reusing the saved evidence rather than searching again; it may need rechecking "
-                    "if the information has changed.\\n\\n"
-                    + item["fact"] + "\\n\\n"
+                    "if the information has changed.\n\n"
+                    + item["fact"] + "\n\n"
                     + f"**Source:** [{item['title']}]({item['source_url']})"
-                    + f"\\n\\n*Saved as {item['status']} · relevance score {item['confidence']:.0%}*"
+                    + f"\n\n*Saved as {item['status']} · relevance score {item['confidence']:.0%}*"
                 )
         return None
 
