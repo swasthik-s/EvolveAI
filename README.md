@@ -33,7 +33,7 @@ streamlit run app.py
 5. The full relevant excerpts and source URLs are saved as Ghost Knowledge candidates; later questions reuse and process that evidence rather than dumping the raw page text.
 6. Time-sensitive questions are researched again.
 7. User feedback creates positive or negative examples that can influence future retrieval.
-7. The sidebar lets the user review personal memories and saved Ghost Knowledge.
+8. The sidebar lets the user review personal memories and saved Ghost Knowledge.
 
 No generated code is executed. There is no external model API dependency. The `ddgs` search library and public websites may be rate-limited or block automated requests; research can fail without an API key.
 
