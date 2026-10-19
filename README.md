@@ -1,30 +1,44 @@
 # EvolveAI
 
-An experimental Python + Streamlit agent that improves through recorded experience, explicit feedback, reusable skill drafts, and evaluation.
+A mobile-first, instruction-driven chat agent built for Streamlit Community Cloud's free tier.
 
-This is an evolving-agent prototype, not AGI. It does not automatically train its underlying model or execute generated code.
+## Design principle
+
+EvolveAI does **not** call OpenAI or any other hosted language model. Its first version uses explicit Python instructions and deterministic rules. It can store facts the user teaches it, retrieve relevant past examples, handle basic arithmetic, and use 👍 / 👎 feedback to influence which examples are surfaced in future replies.
+
+This is an honest prototype, not AGI. Feedback does not train model weights, and a rule-based system cannot yet answer arbitrary open-ended questions like a general-purpose language model.
+
+## Deploy on Streamlit Community Cloud
+
+1. Open https://share.streamlit.io/
+2. Create an app from repository `swasthik-s/EvolveAI`.
+3. Select branch `main` and main file `app.py`.
+4. Deploy. No API key or external model credentials are required.
 
 ## Run locally
 
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -r requirements.txt
-    streamlit run app.py
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-Without OPENAI_API_KEY, the app runs in demo mode. Set OPENAI_API_KEY and optionally EVOLVEAI_MODEL in your environment or Streamlit Secrets. Never hardcode secrets.
+## How the learning loop works
+
+1. The agent follows the policies in `evolveai/instructions.py`.
+2. Explicit user-taught facts can be stored as editable memories.
+3. Each user prompt and agent response is saved in SQLite.
+4. Feedback creates positive or negative examples.
+5. Related examples may be retrieved for later prompts.
+6. The user can review and delete saved memories from the sidebar.
+
+No generated code is executed. There is no external model dependency.
+
+## Free-cloud storage limitation
+
+The app stores data in `data/evolveai.db`. Streamlit Community Cloud's local filesystem is not guaranteed to persist across restarts, rebuilds, or redeployments. This means the chat's learning data may reset. Durable cross-deployment memory will require a separate persistent database or storage service; this version intentionally avoids adding a paid dependency.
 
 ## Tests
 
-    pytest -q
-
-## Learning loop
-1. Retrieve relevant lessons from SQLite.
-2. Generate a response using the configured model or demo mode.
-3. Store the task and result.
-4. Collect user feedback.
-5. Create candidate lessons from positive feedback.
-6. Review skill drafts and approve or reject them.
-
-Feedback and stored lessons are not model-weight training. The dashboard reports feedback metrics rather than claiming that the underlying model has become more intelligent.
-
-Streamlit Community Cloud is suitable for a prototype, but local filesystem data may not persist across restarts. Configure persistent storage for durable use. Generated skills are not executed automatically.
+Run `pytest -q` locally. The project includes tests for memory and skill storage; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
