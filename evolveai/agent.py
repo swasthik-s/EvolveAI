@@ -93,7 +93,7 @@ class EvolveAgent:
 
     def _personal_identity_answer(self, prompt, memories):
         """Handle user-directed identity questions before general knowledge retrieval."""
-        low = re.sub(r"\\s+", " ", prompt.strip().lower()).rstrip(" ?.!")
+        low = re.sub(r"\s+", " ", prompt.strip().lower()).rstrip(" ?.!")
 
         identity_questions = {
             "who am i", "what is my name", "whats my name", "what's my name",
