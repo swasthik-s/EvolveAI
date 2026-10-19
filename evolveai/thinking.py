@@ -33,7 +33,7 @@ def _sentences(text):
     for part in parts:
         sentence = part.strip(" -•|")
         low = sentence.lower()
-        if len(sentence) < 35 or len(sentence) > 500:
+        if len(sentence) < 25 or len(sentence) > 500:
             continue
         if any(phrase in low for phrase in ("redirects here", "disambiguation", "synonyms of")):
             continue
