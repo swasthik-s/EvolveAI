@@ -175,7 +175,9 @@ class EvolveAgent:
                 )
         return None
 
-    def _research_answer(self, prompt):
+    def _research_answer(self, prompt, progress=None):
+        if progress:
+            progress('Searching public sources')
         try:
             evidence = research(prompt, max_results=5)
         except Exception:
@@ -186,6 +188,9 @@ class EvolveAgent:
                 "The search service may be temporarily unavailable or rate-limited. "
                 "You can rephrase the question or teach me the answer."
             ), "rules"
+
+        if progress:
+            progress('Comparing evidence and checking relevance')
 
         # Keep the evidence trail in Ghost Knowledge; return a synthesized answer.
         for item in evidence:
@@ -211,19 +216,51 @@ class EvolveAgent:
             )
         return answer, "web_research"
 
-    def run(self, prompt):
+    def _resolve_followup(self, prompt, history):
+        """Attach recent conversational context to short follow-up questions."""
+        if not history:
+            return prompt
+        clean = prompt.strip()
+        low = clean.lower()
+        followup_starts = (
+            "what about", "how about", "why", "how so", "and ", "what then",
+            "explain more", "tell me more", "what does that", "is it", "does it",
+            "can you explain that", "why is that",
+        )
+        is_short = len(clean.split()) <= 12
+        if not (is_short and (low.endswith("?") or low.startswith(followup_starts))):
+            return prompt
+        previous_user = next(
+            (str(item.get("content", "")).strip() for item in reversed(history)
+             if item.get("role") == "user" and str(item.get("content", "")).strip()),
+            "",
+        )
+        if not previous_user or previous_user.lower() == low:
+            return prompt
+        return f"{previous_user}\nFollow-up question: {clean}"
+
+    def run(self, prompt, history=None, progress=None):
+        def stage(label):
+            if progress:
+                progress(label)
+
+        stage("Understanding your message")
+        effective_prompt = self._resolve_followup(prompt, history or [])
+        stage("Recalling relevant memory and prior experience")
         memories = self.memory.memories()
-        lessons = self.memory.search_lessons(prompt, limit=8)
-        known = self._known_answer(prompt) if self._is_researchable_question(prompt) else None
+        lessons = self.memory.search_lessons(effective_prompt, limit=8)
+        stage("Checking saved knowledge")
+        known = self._known_answer(effective_prompt) if self._is_researchable_question(effective_prompt) else None
         if known:
             answer, mode = known, "ghost_knowledge"
         else:
             answer = self._answer(prompt, lessons, memories)
             unknown = "does not yet include a reliable rule" in answer or "does not yet include" in answer
-            if self.web_research and self._is_researchable_question(prompt) and unknown:
-                answer, mode = self._research_answer(prompt)
+            if self.web_research and self._is_researchable_question(effective_prompt) and unknown:
+                answer, mode = self._research_answer(effective_prompt, progress=progress)
             else:
                 mode = "rules"
+        stage("Preparing a concise response")
         task_id = self.memory.save_task(prompt, answer, mode)
         return {
             "task_id": task_id, "answer": answer, "mode": mode,
