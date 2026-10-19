@@ -91,6 +91,24 @@ class EvolveAgent:
         self.memory.remember(key, value)
         return f"I’ll remember **{key}**: **{value}**. You can review or delete saved memories from the menu."
 
+    def _personal_identity_answer(self, prompt, memories):
+        """Handle user-directed identity questions before general knowledge retrieval."""
+        low = re.sub(r"\\s+", " ", prompt.strip().lower()).rstrip(" ?.!")
+
+        identity_questions = {
+            "who am i", "what is my name", "whats my name", "what's my name",
+            "do you know who i am", "do you know my name",
+        }
+        if low not in identity_questions:
+            return None
+
+        name = next((m.get("value", "").strip() for m in memories
+                     if m.get("key", "").strip().lower() in {"my name", "name"}), "")
+        if name:
+            return f"You're {name}, the person I'm talking to. 😄"
+        return ("You're the person I'm talking to. I don't have your name saved in my current memory, "
+                "so I won't guess. What should I call you?")
+
     def _answer(self, prompt, lessons, memories):
         p = prompt.strip()
         low = p.lower()
@@ -233,6 +251,20 @@ class EvolveAgent:
         stage("Recalling relevant memory and prior experience")
         memories = self.memory.memories()
         lessons = self.memory.search_lessons(effective_prompt, limit=8)
+
+        # Personal identity is a conversation-context question, never a web-search query.
+        identity_answer = self._personal_identity_answer(prompt, memories)
+        if identity_answer is not None:
+            stage("Answering from personal context")
+            task_id = self.memory.save_task(prompt, identity_answer, "personal_context")
+            return {
+                "task_id": task_id, "answer": identity_answer, "mode": "personal_context",
+                "lessons_considered": lessons, "skill_suggestions": [],
+                "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
+                "reasoning_plan": {"intent": "personal_identity", "follow_up": False,
+                                   "steps": ["interpret_message", "retrieve_personal_memory", "compose_response"]},
+            }
+
         stage("Checking saved knowledge")
         known = self._known_answer(effective_prompt) if plan.intent == "question" and not plan.needs_fresh_research else None
         stage("Choosing the response path")
