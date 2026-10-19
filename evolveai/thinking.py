@@ -37,7 +37,7 @@ def _sentences(text):
             continue
         if any(phrase in low for phrase in ("redirects here", "disambiguation", "synonyms of")):
             continue
-        if len(_words(sentence)) < 6:
+        if len(_words(sentence)) < 4:
             continue
         output.append(sentence)
     return output
