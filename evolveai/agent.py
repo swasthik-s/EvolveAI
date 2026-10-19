@@ -163,13 +163,15 @@ class EvolveAgent:
             saved_terms = _terms(item["question"] + " " + item["title"] + " " + item["fact"])
             overlap = len(query_terms & saved_terms) / max(1, len(query_terms))
             if overlap >= 0.45:
+                processed = process_evidence(prompt, [{
+                    "title": item["title"],
+                    "url": item["source_url"],
+                    "excerpt": item["fact"],
+                }])
                 return (
-                    "I found relevant **Ghost Knowledge** from an earlier research session. "
-                    "I’m reusing the saved evidence rather than searching again; it may need rechecking "
-                    "if the information has changed.\n\n"
-                    + item["fact"] + "\n\n"
-                    + f"**Source:** [{item['title']}]({item['source_url']})"
-                    + f"\n\n*Saved as {item['status']} · relevance score {item['confidence']:.0%}*"
+                    processed["answer"]
+                    + "\n\nSource: [" + item["title"] + "](" + item["source_url"] + ")"
+                    + "\n\nReused from Ghost Knowledge; check the source if accuracy or freshness matters."
                 )
         return None
 
