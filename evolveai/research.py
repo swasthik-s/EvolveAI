@@ -51,7 +51,7 @@ def _page_text(url):
     try:
         with requests.get(
             url, headers={"User-Agent": USER_AGENT}, timeout=(3, 6),
-            stream=True, allow_redirects=True,
+            stream=True, allow_redirects=False,
         ) as response:
             response.raise_for_status()
             if not _public_http_url(response.url):
