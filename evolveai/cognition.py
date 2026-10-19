@@ -29,19 +29,19 @@ _ENTITY_ALIASES = {
     "spider-man": ("spider-man", "spiderman", "peter parker"),
 }
 _QUESTION_PATTERNS = (
-    (re.compile(r"^(?:who is|who's|tell me who)\\s+(.+?)\\??$", re.I), "person_or_character"),
-    (re.compile(r"^(?:what is|what's|define|explain)\\s+(.+?)\\??$", re.I), "definition"),
-    (re.compile(r"^(?:tell me about|explain)\\s+(.+?)\\??$", re.I), "overview"),
-    (re.compile(r"^(?:why is|why does|why do)\\s+(.+?)\\??$", re.I), "why"),
-    (re.compile(r"^(?:how does|how do|how can)\\s+(.+?)\\??$", re.I), "how"),
+    (re.compile(r"^(?:who is|who's|tell me who)\s+(.+?)\??$", re.I), "person_or_character"),
+    (re.compile(r"^(?:what is|what's|define|explain)\s+(.+?)\??$", re.I), "definition"),
+    (re.compile(r"^(?:tell me about|explain)\s+(.+?)\??$", re.I), "overview"),
+    (re.compile(r"^(?:why is|why does|why do)\s+(.+?)\??$", re.I), "why"),
+    (re.compile(r"^(?:how does|how do|how can)\s+(.+?)\??$", re.I), "how"),
 )
 _STOP_END = re.compile(r"[?!.]+$")
 
 
 def _normalize(text: str) -> str:
-    text = re.sub(r"([a-z])([A-Z])", r"\\1 \\2", str(text or ""))
+    text = re.sub(r"([a-z])([A-Z])", r"\1 \2", str(text or ""))
     text = text.replace("_", " ").replace("-", " ")
-    return re.sub(r"\\s+", " ", text.lower()).strip()
+    return re.sub(r"\s+", " ", text.lower()).strip()
 
 
 def _resolve_entity(subject: str):
@@ -51,7 +51,7 @@ def _resolve_entity(subject: str):
     for canonical, aliases in _ENTITY_ALIASES.items():
         for alias in aliases:
             alias_norm = _normalize(alias)
-            if re.search(r"(?<!\\w)" + re.escape(alias_norm) + r"(?!\\w)", normalized):
+            if re.search(r"(?<!\w)" + re.escape(alias_norm) + r"(?!\w)", normalized):
                 matches.append((len(alias_norm), canonical, alias))
     if not matches:
         return subject.strip(), ()
