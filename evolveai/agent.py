@@ -230,6 +230,7 @@ class EvolveAgent:
         lessons = self.memory.search_lessons(effective_prompt, limit=8)
         stage("Checking saved knowledge")
         known = self._known_answer(effective_prompt) if plan.intent == "question" and not plan.needs_fresh_research else None
+        stage("Choosing the response path")
         if known:
             answer, mode = known, "ghost_knowledge"
         else:
