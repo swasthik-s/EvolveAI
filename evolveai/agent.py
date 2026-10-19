@@ -5,6 +5,7 @@ from .instructions import CORE_RULES, LEARNING_POLICY
 from .memory import ExperienceMemory
 from .research import research
 from .thinking import process_evidence
+from .reasoning import build_plan
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
@@ -216,47 +217,25 @@ class EvolveAgent:
             )
         return answer, "web_research"
 
-    def _resolve_followup(self, prompt, history):
-        """Attach recent conversational context to short follow-up questions."""
-        if not history:
-            return prompt
-        clean = prompt.strip()
-        low = clean.lower()
-        followup_starts = (
-            "what about", "how about", "why", "how so", "and ", "what then",
-            "explain more", "tell me more", "what does that", "is it", "does it",
-            "can you explain that", "why is that",
-        )
-        is_short = len(clean.split()) <= 12
-        if not (is_short and (low.endswith("?") or low.startswith(followup_starts))):
-            return prompt
-        previous_user = next(
-            (str(item.get("content", "")).strip() for item in reversed(history)
-             if item.get("role") == "user" and str(item.get("content", "")).strip()),
-            "",
-        )
-        if not previous_user or previous_user.lower() == low:
-            return prompt
-        return f"{previous_user}\nFollow-up question: {clean}"
-
     def run(self, prompt, history=None, progress=None):
         def stage(label):
             if progress:
                 progress(label)
 
         stage("Understanding your message")
-        effective_prompt = self._resolve_followup(prompt, history or [])
+        plan = build_plan(prompt, history or [])
+        effective_prompt = plan.working_query
         stage("Recalling relevant memory and prior experience")
         memories = self.memory.memories()
         lessons = self.memory.search_lessons(effective_prompt, limit=8)
         stage("Checking saved knowledge")
-        known = self._known_answer(effective_prompt) if self._is_researchable_question(effective_prompt) else None
+        known = self._known_answer(effective_prompt) if plan.intent == "question" and not plan.needs_fresh_research else None
         if known:
             answer, mode = known, "ghost_knowledge"
         else:
             answer = self._answer(prompt, lessons, memories)
             unknown = "does not yet include a reliable rule" in answer or "does not yet include" in answer
-            if self.web_research and self._is_researchable_question(effective_prompt) and unknown:
+            if self.web_research and plan.intent == "question" and unknown:
                 answer, mode = self._research_answer(effective_prompt, progress=progress)
             else:
                 mode = "rules"
@@ -266,4 +245,5 @@ class EvolveAgent:
             "task_id": task_id, "answer": answer, "mode": mode,
             "lessons_considered": lessons, "skill_suggestions": [],
             "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
+            "reasoning_plan": {"intent": plan.intent, "follow_up": plan.is_follow_up, "steps": list(plan.steps)},
         }
