@@ -77,10 +77,10 @@ def _page_text(url):
 
 def _best_excerpt(text, query, limit=650):
     terms = _terms(query)
-    sentences = re.split(r"(?<=[.!?])\\s+|\\n+", text)
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", text)
     ranked = []
     for sentence in sentences:
-        sentence = re.sub(r"\\s+", " ", sentence).strip()
+        sentence = re.sub(r"\s+", " ", sentence).strip()
         if len(sentence) < 35:
             continue
         words = _terms(sentence)
@@ -112,8 +112,8 @@ def research(query, max_results=5):
         if not _public_http_url(url) or url in seen_urls:
             continue
         seen_urls.add(url)
-        title = re.sub(r"\\s+", " ", str(item.get("title") or "Untitled page")).strip()[:240]
-        snippet = re.sub(r"\\s+", " ", str(item.get("body") or "")).strip()
+        title = re.sub(r"\s+", " ", str(item.get("title") or "Untitled page")).strip()[:240]
+        snippet = re.sub(r"\s+", " ", str(item.get("body") or "")).strip()
         page = _page_text(url)
         excerpt = _best_excerpt(page, query) if page else ""
         if not excerpt:
