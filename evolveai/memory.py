@@ -155,8 +155,8 @@ class ExperienceMemory:
             item = dict(row)
             haystack = (item["question"] + " " + item["fact"] + " " + item["title"]).lower()
             overlap = sum(1 for word in words if word in haystack)
-            if words and overlap:
-                item["_rank"] = overlap / len(words)
+            if not words or overlap:
+                item["_rank"] = overlap / max(1, len(words))
                 ranked.append(item)
         ranked.sort(key=lambda item: (item["_rank"], item["confidence"], item["last_checked_at"]), reverse=True)
         for item in ranked:
