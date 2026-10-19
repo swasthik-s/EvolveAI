@@ -6,6 +6,7 @@ from .memory import ExperienceMemory
 from .research import research
 from .thinking import process_evidence
 from .reasoning import build_plan
+from .cognition import understand
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
@@ -177,10 +178,14 @@ class EvolveAgent:
         return None
 
     def _research_answer(self, prompt, progress=None):
+        # Turn the message into a structured query before searching. This is a
+        # transparent symbolic step, not generated language.
+        frame = understand(prompt)
+        research_query = frame.search_query or prompt
         if progress:
             progress('Searching public sources')
         try:
-            evidence = research(prompt, max_results=5)
+            evidence = research(research_query, max_results=5)
         except Exception:
             evidence = []
         if not evidence:
@@ -200,7 +205,7 @@ class EvolveAgent:
                 source_url=item["url"], confidence=item["confidence"], status="candidate",
             )
 
-        processed = process_evidence(prompt, evidence)
+        processed = process_evidence(research_query, evidence)
         if not processed["sources"]:
             answer = processed["answer"]
         else:
