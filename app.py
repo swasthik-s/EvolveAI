@@ -45,7 +45,7 @@ if "welcome_shown" not in st.session_state:
 top_left, top_right = st.columns([3, 1])
 with top_left:
     st.title("🧠 EvolveAI")
-    st.markdown('<p class="evolve-subtitle">A small agent that learns from what you teach it.</p>', unsafe_allow_html=True)
+    st.markdown('<p class="evolve-subtitle">Checks what it knows, researches when unsure, and remembers source-linked findings.</p>', unsafe_allow_html=True)
 with top_right:
     st.caption("RULE-BASED")
     st.caption("No external model")
