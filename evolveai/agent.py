@@ -229,14 +229,29 @@ class EvolveAgent:
         if progress:
             progress('Comparing evidence and checking relevance')
 
-        # Keep the evidence trail in Ghost Knowledge; return a synthesized answer.
+        # Filter evidence against the user's actual question before saving or answering.
+        relevant_evidence = []
         for item in evidence:
-            self.memory.add_ghost_knowledge(
-                question=prompt, fact=item["excerpt"], title=item["title"],
-                source_url=item["url"], confidence=item["confidence"], status="candidate",
+            relevance = assess_relevance(
+                prompt, item.get("title", ""), item.get("excerpt", ""),
+                saved_question=prompt,
             )
+            if relevance.accepted:
+                relevant_evidence.append(item)
+                self.memory.add_ghost_knowledge(
+                    question=prompt, fact=item["excerpt"], title=item["title"],
+                    source_url=item["url"],
+                    confidence=min(float(item.get("confidence", 0.4)), relevance.score),
+                    status="candidate",
+                )
 
-        processed = process_evidence(research_query, evidence)
+        if not relevant_evidence:
+            return (
+                "I found search results, but none matched your question closely enough. "
+                "I won't present unrelated pages as an answer. Could you clarify what you mean?"
+            ), "rules"
+
+        processed = process_evidence(prompt, relevant_evidence)
         if not processed["sources"]:
             answer = processed["answer"]
         else:
