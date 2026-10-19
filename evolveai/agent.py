@@ -7,6 +7,7 @@ from .research import research
 from .thinking import process_evidence
 from .reasoning import build_plan
 from .cognition import understand
+from .relevance import assess_relevance, is_personal_context_query
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
@@ -176,23 +177,30 @@ class EvolveAgent:
         return low.endswith("?") or low.startswith(_QUESTION_STARTS)
 
     def _known_answer(self, prompt):
+        if is_personal_context_query(prompt):
+            return None
         query_terms = _terms(prompt)
         if not query_terms or query_terms & _CURRENT_TERMS:
             return None
-        for item in self.memory.search_ghost_knowledge(prompt, limit=5):
-            saved_terms = _terms(item["question"] + " " + item["title"] + " " + item["fact"])
-            overlap = len(query_terms & saved_terms) / max(1, len(query_terms))
-            if overlap >= 0.45:
-                processed = process_evidence(prompt, [{
-                    "title": item["title"],
-                    "url": item["source_url"],
-                    "excerpt": item["fact"],
-                }])
-                return (
-                    processed["answer"]
-                    + "\n\nSource: [" + item["title"] + "](" + item["source_url"] + ")"
-                    + "\n\nReused from Ghost Knowledge; check the source if accuracy or freshness matters."
-                )
+        for item in self.memory.search_ghost_knowledge(prompt, limit=8):
+            relevance = assess_relevance(
+                prompt, item.get("title", ""), item.get("fact", ""),
+                saved_question=item.get("question", ""),
+            )
+            if not relevance.accepted:
+                continue
+            processed = process_evidence(prompt, [{
+                "title": item["title"],
+                "url": item["source_url"],
+                "excerpt": item["fact"],
+            }])
+            if not processed.get("sources") or not processed.get("answer"):
+                continue
+            return (
+                processed["answer"]
+                + "\\n\\nSource: [" + item["title"] + "](" + item["source_url"] + ")"
+                + "\\n\\nReused from Ghost Knowledge; check the source if accuracy or freshness matters."
+            )
         return None
 
     def _research_answer(self, prompt, progress=None):
