@@ -204,6 +204,11 @@ class EvolveAgent:
         return None
 
     def _research_answer(self, prompt, progress=None):
+        # Defense in depth: personal-context questions are never sent to web search.
+        if is_personal_context_query(prompt):
+            return self._personal_identity_answer(prompt, self.memory.memories()) or (
+                "You're the person I'm talking to. I don't have enough personal context saved to identify you."
+            ), "personal_context"
         # Turn the message into a structured query before searching. This is a
         # transparent symbolic step, not generated language.
         frame = understand(prompt)
