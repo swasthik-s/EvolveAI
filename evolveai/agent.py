@@ -180,29 +180,34 @@ class EvolveAgent:
             evidence = []
         if not evidence:
             return (
-                "I’m not confident enough to answer yet, and my free web search returned no usable evidence. "
-                "The search service may be unavailable or rate-limited.\\n\\n"
-                "Try rephrasing the question or teach me the answer, and I can save that knowledge."
+                "I’m not confident enough to answer yet, and free web search returned no usable evidence. "
+                "The search service may be temporarily unavailable or rate-limited. "
+                "You can rephrase the question or teach me the answer."
             ), "rules"
 
-        domains = {item["source_domain"] for item in evidence if item["source_domain"]}
+        # Keep the evidence trail in Ghost Knowledge; return a synthesized answer.
         for item in evidence:
             self.memory.add_ghost_knowledge(
                 question=prompt, fact=item["excerpt"], title=item["title"],
                 source_url=item["url"], confidence=item["confidence"], status="candidate",
             )
-        lines = [
-            f"- **[{item['title']}]({item['url']})**\\n  {item['excerpt']}"
-            for item in evidence[:3]
-        ]
-        note = (
-            f"I didn’t find a reliable answer in my saved knowledge, so I searched the public web and saved "
-            f"{len(evidence)} source excerpt(s) as **Ghost Knowledge**. These are research candidates, "
-            "not guaranteed facts; check the cited pages for context."
-        )
-        if len(domains) < 2:
-            note += " I found fewer than two distinct source domains, so independent corroboration is limited."
-        return note + "\\n\\n" + "\\n\\n".join(lines), "web_research"
+
+        processed = process_evidence(prompt, evidence)
+        if not processed["sources"]:
+            answer = processed["answer"]
+        else:
+            source_lines = [
+                f"- [{source['title']}]({source['url']})"
+                for source in processed["sources"][:3]
+            ]
+            answer = (
+                processed["answer"]
+                + "\n\n**Sources**\n"
+                + "\n".join(source_lines)
+                + "\n\n*I combined relevant statements from public pages. "
+                "The evidence is heuristic, so check the sources if precision matters.*"
+            )
+        return answer, "web_research"
 
     def run(self, prompt):
         memories = self.memory.memories()
