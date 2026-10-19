@@ -4,6 +4,7 @@ import re
 from .instructions import CORE_RULES, LEARNING_POLICY
 from .memory import ExperienceMemory
 from .research import research
+from .thinking import process_evidence
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
