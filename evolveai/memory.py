@@ -9,7 +9,7 @@ def now_iso():
 
 
 class ExperienceMemory:
-    """Small SQLite store for chat history, explicit memories, lessons, and feedback."""
+    """SQLite store for chat history, personal memories, lessons, and Ghost Knowledge."""
 
     def __init__(self, path="data/evolveai.db"):
         self.path = str(path)
@@ -35,7 +35,14 @@ class ExperienceMemory:
                 key TEXT PRIMARY KEY, value TEXT NOT NULL, source TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )""")
+            conn.execute("""CREATE TABLE IF NOT EXISTS ghost_knowledge (
+                id TEXT PRIMARY KEY, question TEXT NOT NULL, fact TEXT NOT NULL,
+                title TEXT NOT NULL, source_url TEXT NOT NULL, confidence REAL NOT NULL,
+                status TEXT NOT NULL, created_at TEXT NOT NULL, last_checked_at TEXT NOT NULL,
+                UNIQUE(question, source_url)
+            )""")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ghost_created ON ghost_knowledge(created_at)")
 
     def save_task(self, prompt, answer, mode="rules"):
         task_id = uuid.uuid4().hex[:12]
@@ -117,6 +124,45 @@ class ExperienceMemory:
             cursor = conn.execute("DELETE FROM memories WHERE key=?", (key.strip().lower(),))
         return cursor.rowcount > 0
 
+    def add_ghost_knowledge(self, question, fact, title, source_url, confidence=0.4, status="uncertain"):
+        question, fact = question.strip(), fact.strip()
+        title, source_url = title.strip() or "Web source", source_url.strip()
+        if not question or not fact or not source_url:
+            return False
+        confidence = max(0.0, min(1.0, float(confidence)))
+        now = now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """INSERT INTO ghost_knowledge
+                (id, question, fact, title, source_url, confidence, status, created_at, last_checked_at)
+                VALUES(?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(question, source_url) DO UPDATE SET
+                fact=excluded.fact, title=excluded.title, confidence=excluded.confidence,
+                status=excluded.status, last_checked_at=excluded.last_checked_at""",
+                (uuid.uuid4().hex[:12], question, fact, title, source_url, confidence, status, now, now),
+            )
+        return True
+
+    def search_ghost_knowledge(self, query="", limit=5):
+        words = {w.lower() for w in query.split() if len(w) > 2}
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, question, fact, title, source_url, confidence, status, created_at, last_checked_at "
+                "FROM ghost_knowledge ORDER BY last_checked_at DESC LIMIT 1000"
+            ).fetchall()
+        ranked = []
+        for row in rows:
+            item = dict(row)
+            haystack = (item["question"] + " " + item["fact"] + " " + item["title"]).lower()
+            overlap = sum(1 for word in words if word in haystack)
+            if words and overlap:
+                item["_rank"] = overlap / len(words)
+                ranked.append(item)
+        ranked.sort(key=lambda item: (item["_rank"], item["confidence"], item["last_checked_at"]), reverse=True)
+        for item in ranked:
+            item.pop("_rank", None)
+        return ranked[:max(1, min(int(limit), 100))]
+
     def recent_tasks(self, limit=50):
         with self._connect() as conn:
             rows = conn.execute(
@@ -132,8 +178,9 @@ class ExperienceMemory:
             good = conn.execute("SELECT COUNT(*) FROM tasks WHERE score >= 0.8").fetchone()[0]
             memories = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             lessons = conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
+            ghost = conn.execute("SELECT COUNT(*) FROM ghost_knowledge").fetchone()[0]
         return {
             "tasks": total, "rated_tasks": rated,
             "success_rate": good / rated if rated else 0.0,
-            "memories": memories, "lessons": lessons,
+            "memories": memories, "lessons": lessons, "ghost_knowledge": ghost,
         }
