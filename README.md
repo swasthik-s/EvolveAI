@@ -44,3 +44,9 @@ The app stores data in `data/evolveai.db`. Streamlit Community Cloud's local fil
 ## Tests
 
 Run `pytest -q` locally. The project includes tests for memory, Ghost Knowledge retrieval, the uncertainty-triggered research decision, and deterministic evidence synthesis; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
+
+## Custom understanding engine (no generative model)
+
+The first cognition layer lives in `evolveai/cognition.py`. It parses common question forms into a structured frame, canonicalizes a small reviewed set of entity aliases (for example, “ironman” → “Iron Man”), records why a rule matched, and produces a more specific web-search query. Unknown subjects are preserved rather than confidently guessed. The agent uses this frame before web retrieval, and tests cover canonicalization and safe fallback.
+
+This borrows *ideas*, not code, from established NLP approaches: spaCy demonstrates practical pipelines for linguistic features and entity processing ([spaCy 101](https://spacy.io/usage/spacy-101/)); ConceptNet provides a commonsense relation graph that can inform a later knowledge layer ([ConceptNet API](https://github.com/commonsense/conceptnet5/wiki/API)). EvolveAI currently does not depend on either package or service. We are implementing a small, transparent engine first so each decision can be tested and explained. Its entity lexicon is intentionally small; it is not yet general-purpose language understanding.
