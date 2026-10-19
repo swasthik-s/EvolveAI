@@ -4,9 +4,9 @@ A mobile-first, instruction-driven chat agent built for Streamlit Community Clou
 
 ## Design principle
 
-EvolveAI does **not** call OpenAI or any other hosted language model. Its first version uses explicit Python instructions and deterministic rules. It can store facts the user teaches it, retrieve relevant past examples, handle basic arithmetic, and use 👍 / 👎 feedback to influence which examples are surfaced in future replies.
+EvolveAI does **not** call OpenAI or any other hosted language model. Its first version uses explicit Python instructions and deterministic rules. It can store facts the user teaches it, retrieve relevant past examples, handle basic arithmetic, and use 👍 / 👎 feedback to influence which examples are surfaced in future replies. For factual questions outside its current rules and saved knowledge, it can try free, keyless public web search and save source excerpts as Ghost Knowledge.
 
-This is an honest prototype, not AGI. Feedback does not train model weights, and a rule-based system cannot yet answer arbitrary open-ended questions like a general-purpose language model.
+This is an honest prototype, not AGI. Feedback does not train model weights, and a rule-based system cannot yet answer arbitrary open-ended questions like a general-purpose language model. Web research is extractive: it retrieves public search results, reads some pages, ranks text by keyword overlap, and stores source-linked candidates. It does not semantically verify facts like a human or an LLM.
 
 ## Deploy on Streamlit Community Cloud
 
@@ -33,7 +33,7 @@ streamlit run app.py
 5. Related examples may be retrieved for later prompts.
 6. The user can review and delete saved memories from the sidebar.
 
-No generated code is executed. There is no external model dependency.
+No generated code is executed. There is no external model API dependency. The `ddgs` search library and public websites may be rate-limited or block automated requests; research can fail without an API key.
 
 ## Free-cloud storage limitation
 
@@ -41,4 +41,4 @@ The app stores data in `data/evolveai.db`. Streamlit Community Cloud's local fil
 
 ## Tests
 
-Run `pytest -q` locally. The project includes tests for memory and skill storage; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
+Run `pytest -q` locally. The project includes tests for memory, Ghost Knowledge retrieval, and the uncertainty-triggered research decision; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
