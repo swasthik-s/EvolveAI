@@ -3,6 +3,16 @@ import operator
 import re
 from .instructions import CORE_RULES, LEARNING_POLICY
 from .memory import ExperienceMemory
+from .research import research
+
+
+_QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
+_CURRENT_TERMS = {"today", "latest", "current", "currently", "now", "recent", "news", "weather", "price", "prices", "stock", "stocks", "exchange", "rate", "schedule", "availability", "updated"}
+_STOP_WORDS = {"what", "when", "where", "which", "who", "whom", "whose", "why", "how", "does", "did", "doing", "have", "has", "had", "will", "would", "could", "should", "can", "the", "and", "for", "from", "with", "that", "this", "about", "into", "your", "you", "are", "was", "were", "is", "not"}
+
+
+def _terms(text):
+    return {w for w in re.findall(r"[a-zA-Z0-9]{3,}", text.lower()) if w not in _STOP_WORDS}
 
 
 _SAFE_OPERATORS = {
@@ -41,9 +51,10 @@ def _safe_math(expression):
 class EvolveAgent:
     """Instruction-driven assistant with explicit memory and feedback retrieval."""
 
-    def __init__(self, memory: ExperienceMemory, skills=None):
+    def __init__(self, memory: ExperienceMemory, skills=None, web_research=True):
         self.memory = memory
         self.skills = skills
+        self.web_research = web_research
 
     def _teach_memory(self, prompt):
         patterns = [
@@ -107,10 +118,11 @@ class EvolveAgent:
             return (
                 "I work through written instructions rather than an external AI model. Right now I can:\n\n"
                 "- Remember facts and preferences you explicitly teach me\n"
-                "- Retrieve related lessons from earlier conversations\n"
-                "- Use your 👍 / 👎 feedback to change which examples influence future replies\n"
+                "- Search public web pages when I lack relevant knowledge\n"
+                "- Save research findings as Ghost Knowledge for future questions\n"
+                "- Retrieve related lessons and use your 👍 / 👎 feedback\n"
                 "- Handle basic arithmetic and simple structured tasks\n\n"
-                "I’m still a prototype, so I’ll tell you when a request is beyond my current abilities."
+                "I’m still a prototype: web research extracts text and scores relevance rather than understanding it like a human."
             )
 
         related = [x for x in lessons if any(w in (x["task"] + " " + x["lesson"]).lower()
@@ -132,13 +144,81 @@ class EvolveAgent:
             + experience + known
         )
 
+    def _is_researchable_question(self, prompt):
+        low = prompt.strip().lower()
+        if len(low) < 8 or len(low) > 400:
+            return False
+        if re.match(r"^(?:please )?remember\\b|^(?:my name is|call me|i prefer)\\b", low):
+            return False
+        if low.startswith(("what do you remember", "show my memories", "what have you learned about me")):
+            return False
+        return low.endswith("?") or low.startswith(_QUESTION_STARTS)
+
+    def _known_answer(self, prompt):
+        query_terms = _terms(prompt)
+        if not query_terms or query_terms & _CURRENT_TERMS:
+            return None
+        for item in self.memory.search_ghost_knowledge(prompt, limit=5):
+            saved_terms = _terms(item["question"] + " " + item["title"] + " " + item["fact"])
+            overlap = len(query_terms & saved_terms) / max(1, len(query_terms))
+            if overlap >= 0.45:
+                return (
+                    "I found relevant **Ghost Knowledge** from an earlier research session. "
+                    "I’m reusing the saved evidence rather than searching again; it may need rechecking "
+                    "if the information has changed.\\n\\n"
+                    + item["fact"] + "\\n\\n"
+                    + f"**Source:** [{item['title']}]({item['source_url']})"
+                    + f"\\n\\n*Saved as {item['status']} · relevance score {item['confidence']:.0%}*"
+                )
+        return None
+
+    def _research_answer(self, prompt):
+        try:
+            evidence = research(prompt, max_results=5)
+        except Exception:
+            evidence = []
+        if not evidence:
+            return (
+                "I’m not confident enough to answer yet, and my free web search returned no usable evidence. "
+                "The search service may be unavailable or rate-limited.\\n\\n"
+                "Try rephrasing the question or teach me the answer, and I can save that knowledge."
+            ), "rules"
+
+        domains = {item["source_domain"] for item in evidence if item["source_domain"]}
+        for item in evidence:
+            self.memory.add_ghost_knowledge(
+                question=prompt, fact=item["excerpt"], title=item["title"],
+                source_url=item["url"], confidence=item["confidence"], status="candidate",
+            )
+        lines = [
+            f"- **[{item['title']}]({item['url']})**\\n  {item['excerpt']}"
+            for item in evidence[:3]
+        ]
+        note = (
+            f"I didn’t find a reliable answer in my saved knowledge, so I searched the public web and saved "
+            f"{len(evidence)} source excerpt(s) as **Ghost Knowledge**. These are research candidates, "
+            "not guaranteed facts; check the cited pages for context."
+        )
+        if len(domains) < 2:
+            note += " I found fewer than two distinct source domains, so independent corroboration is limited."
+        return note + "\\n\\n" + "\\n\\n".join(lines), "web_research"
+
     def run(self, prompt):
         memories = self.memory.memories()
         lessons = self.memory.search_lessons(prompt, limit=8)
-        answer = self._answer(prompt, lessons, memories)
-        task_id = self.memory.save_task(prompt, answer, "rules")
+        known = self._known_answer(prompt) if self._is_researchable_question(prompt) else None
+        if known:
+            answer, mode = known, "ghost_knowledge"
+        else:
+            answer = self._answer(prompt, lessons, memories)
+            unknown = "does not yet include a reliable rule" in answer or "does not yet include" in answer
+            if self.web_research and self._is_researchable_question(prompt) and unknown:
+                answer, mode = self._research_answer(prompt)
+            else:
+                mode = "rules"
+        task_id = self.memory.save_task(prompt, answer, mode)
         return {
-            "task_id": task_id, "answer": answer, "mode": "rules",
+            "task_id": task_id, "answer": answer, "mode": mode,
             "lessons_considered": lessons, "skill_suggestions": [],
             "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
         }
