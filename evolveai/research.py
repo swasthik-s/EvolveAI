@@ -70,7 +70,14 @@ def _page_text(url):
         soup = BeautifulSoup(raw, "html.parser")
         for node in soup(["script", "style", "nav", "footer", "header", "noscript", "svg"]):
             node.decompose()
-        return " ".join(soup.stripped_strings)[:30_000]
+        paragraphs = [
+            re.sub(r"\\s+", " ", node.get_text(" ", strip=True)).strip()
+            for node in soup.find_all(["p", "h1", "h2", "h3"])
+        ]
+        paragraphs = [p for p in paragraphs if len(p) >= 35]
+        if not paragraphs:
+            paragraphs = list(soup.stripped_strings)
+        return "\\n".join(paragraphs)[:30_000]
     except (requests.RequestException, ValueError, UnicodeError):
         return ""
 
