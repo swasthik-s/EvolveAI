@@ -1,4 +1,5 @@
 import os
+import time
 import streamlit as st
 from evolveai.agent import EvolveAgent
 from evolveai.memory import ExperienceMemory
@@ -12,12 +13,14 @@ st.set_page_config(
 
 st.markdown("""
 <style>
-    .block-container { max-width: 820px; padding-top: 1.1rem; padding-bottom: 5.5rem; }
-    [data-testid="stChatMessage"] { padding: .75rem .85rem; border-radius: 1rem; }
+    .block-container { max-width: 760px; padding-top: 1rem; padding-bottom: 5rem; }
+    [data-testid="stChatMessage"] { padding: .8rem .9rem; border-radius: 1.1rem; border: 1px solid rgba(128,128,128,.12); }
     [data-testid="stChatInput"] { padding-bottom: env(safe-area-inset-bottom); }
     div[data-testid="stHorizontalBlock"] { gap: .45rem; }
-    .evolve-subtitle { color: var(--text-color); opacity: .72; font-size: .92rem; margin-top: -.5rem; }
-    .evolve-pill { display:inline-block; border:1px solid rgba(128,128,128,.35); border-radius:999px; padding:.18rem .55rem; font-size:.78rem; }
+    .evolve-subtitle { color: var(--text-color); opacity: .68; font-size: .9rem; margin-top: -.55rem; }
+    [data-testid="stStatusWidget"] { border-radius: .9rem; }
+    [data-testid="stChatMessage"] p { line-height: 1.62; }
+    .stButton button { border-radius: .8rem; }
     @media (max-width: 640px) {
         .block-container { padding-left: .75rem; padding-right: .75rem; padding-top: .65rem; }
         h1 { font-size: 1.7rem !important; }
@@ -44,11 +47,10 @@ if "welcome_shown" not in st.session_state:
 
 top_left, top_right = st.columns([3, 1])
 with top_left:
-    st.title("🧠 EvolveAI")
-    st.markdown('<p class="evolve-subtitle">Checks what it knows, researches when unsure, and remembers source-linked findings.</p>', unsafe_allow_html=True)
+    st.title("EvolveAI")
+    st.markdown('<p class="evolve-subtitle">A personal assistant that recalls, researches, and learns from feedback.</p>', unsafe_allow_html=True)
 with top_right:
-    st.caption("RULE-BASED")
-    st.caption("No external model")
+    st.caption("Preview")
 
 with st.sidebar:
     st.subheader("Your EvolveAI")
@@ -76,7 +78,7 @@ with st.sidebar:
             st.write(item["fact"])
             st.caption(f"Relevance score: {item['confidence']:.0%} · Last checked: {item['last_checked_at'][:10]}")
             st.markdown(f"[Open source]({item['source_url']})")
-    with st.expander("How it learns"):
+    with st.expander("How it works"):
         st.write("1. It checks programmed rules, personal memory, and Ghost Knowledge first.")
         st.write("2. If a factual question is outside its knowledge, it tries free public web search.")
         st.write("3. It stores page excerpts and source links as research candidates, not guaranteed facts.")
@@ -122,8 +124,27 @@ if prompt:
     with st.chat_message("user"):
         st.markdown(prompt)
     with st.chat_message("assistant"):
-        with st.spinner("Checking what I know… researching the web only if needed…"):
-            result = agent.run(prompt)
+        status = st.status("Thinking through your message…", expanded=True)
+        started_at = time.perf_counter()
+
+        def show_stage(label):
+            status.update(label=f"{label}…", state="running", expanded=True)
+            time.sleep(0.12)
+
+        try:
+            result = agent.run(
+                prompt,
+                history=st.session_state.chat_history[:-1],
+                progress=show_stage,
+            )
+            # Keep a brief, visible response transition for very fast local answers.
+            remaining = 0.55 - (time.perf_counter() - started_at)
+            if remaining > 0:
+                time.sleep(remaining)
+            status.update(label="Ready", state="complete", expanded=False)
+        except Exception:
+            status.update(label="Something went wrong while processing this message", state="error", expanded=True)
+            raise
         st.markdown(result["answer"])
         st.caption("Was this useful? Your feedback changes which examples I use later.")
         c1, c2, _ = st.columns([1, 1, 5])
