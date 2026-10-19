@@ -1,7 +1,6 @@
 """Free, keyless web research for EvolveAI.
 
-This module uses public search results and ordinary HTTP page retrieval. It does
-not call an LLM. Extracted text is evidence, not trusted instructions.
+Public search results and page text are evidence, not trusted instructions.
 """
 import ipaddress
 import re
@@ -12,7 +11,7 @@ from bs4 import BeautifulSoup
 from ddgs import DDGS
 
 
-USER_AGENT = "EvolveAIResearch/0.1 (public-page text extraction)"
+USER_AGENT = "EvolveAIResearch/0.2"
 MAX_PAGE_BYTES = 1_000_000
 STOP_WORDS = {
     "what", "when", "where", "which", "who", "whom", "whose", "why", "how",
@@ -59,30 +58,28 @@ def _page_text(url):
             content_type = response.headers.get("content-type", "").lower()
             if "text/html" not in content_type and "application/xhtml" not in content_type:
                 return ""
-            chunks = []
-            size = 0
+            chunks, size = [], 0
             for chunk in response.iter_content(16_384):
                 size += len(chunk)
                 if size > MAX_PAGE_BYTES:
                     break
                 chunks.append(chunk)
-            raw = b"".join(chunks)
-        soup = BeautifulSoup(raw, "html.parser")
+            soup = BeautifulSoup(b"".join(chunks), "html.parser")
         for node in soup(["script", "style", "nav", "footer", "header", "noscript", "svg"]):
             node.decompose()
         paragraphs = [
-            re.sub(r"\\s+", " ", node.get_text(" ", strip=True)).strip()
+            re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip()
             for node in soup.find_all(["p", "h1", "h2", "h3"])
         ]
         paragraphs = [p for p in paragraphs if len(p) >= 35]
         if not paragraphs:
             paragraphs = list(soup.stripped_strings)
-        return "\\n".join(paragraphs)[:30_000]
+        return "\n".join(paragraphs)[:30_000]
     except (requests.RequestException, ValueError, UnicodeError):
         return ""
 
 
-def _best_excerpt(text, query, limit=650):
+def _best_excerpt(text, query, limit=1600):
     terms = _terms(query)
     sentences = re.split(r"(?<=[.!?])\s+|\n+", text)
     ranked = []
@@ -93,17 +90,30 @@ def _best_excerpt(text, query, limit=650):
         words = _terms(sentence)
         overlap = len(terms & words)
         if overlap:
-            ranked.append((overlap / max(1, len(terms)), overlap, sentence))
-    ranked.sort(key=lambda item: (item[0], item[1], min(len(item[2]), 500)), reverse=True)
+            definition_bonus = 1 if re.search(
+                r"\b(is|are|means|refers to|defined as|known as)\b", sentence.lower()
+            ) else 0
+            score = overlap / max(1, len(terms)) + definition_bonus
+            ranked.append((score, overlap, sentence))
+    ranked.sort(key=lambda item: (item[0], item[1], -abs(len(item[2]) - 180)), reverse=True)
     if ranked:
-        excerpt = " ".join(item[2] for item in ranked[:3])
+        selected, seen = [], set()
+        for _, _, sentence in ranked:
+            normalized = re.sub(r"\W+", " ", sentence.lower()).strip()
+            if normalized in seen:
+                continue
+            selected.append(sentence)
+            seen.add(normalized)
+            if len(selected) == 4:
+                break
+        excerpt = "\n".join(selected)
     else:
         excerpt = text[:limit]
     return excerpt[:limit].strip()
 
 
 def research(query, max_results=5):
-    """Search public web results, read a few pages, and return extractive evidence."""
+    """Search public pages and return a small set of relevant evidence excerpts."""
     query = str(query).strip()
     if not query:
         return []
@@ -112,8 +122,7 @@ def research(query, max_results=5):
     except Exception:
         return []
 
-    evidence = []
-    seen_urls = set()
+    evidence, seen_urls = [], set()
     for item in results:
         url = str(item.get("href") or item.get("url") or "").strip()
         if not _public_http_url(url) or url in seen_urls:
@@ -122,18 +131,13 @@ def research(query, max_results=5):
         title = re.sub(r"\s+", " ", str(item.get("title") or "Untitled page")).strip()[:240]
         snippet = re.sub(r"\s+", " ", str(item.get("body") or "")).strip()
         page = _page_text(url)
-        excerpt = _best_excerpt(page, query) if page else ""
-        if not excerpt:
-            excerpt = snippet[:650]
+        excerpt = _best_excerpt(page, query) if page else snippet[:650]
         if not excerpt:
             continue
-        terms = _terms(query)
-        overlap = len(terms & _terms(title + " " + excerpt))
+        overlap = len(_terms(query) & _terms(title + " " + excerpt))
         confidence = min(0.85, 0.25 + 0.12 * overlap)
         evidence.append({
-            "title": title,
-            "url": url,
-            "excerpt": excerpt,
+            "title": title, "url": url, "excerpt": excerpt,
             "confidence": round(confidence, 2),
             "source_domain": urlparse(url).hostname or "",
         })
