@@ -27,11 +27,12 @@ streamlit run app.py
 ## How the learning loop works
 
 1. The agent follows the policies in `evolveai/instructions.py`.
-2. Explicit user-taught facts can be stored as editable memories.
-3. Each user prompt and agent response is saved in SQLite.
-4. Feedback creates positive or negative examples.
-5. Related examples may be retrieved for later prompts.
-6. The user can review and delete saved memories from the sidebar.
+2. It checks programmed rules, personal memories, and Ghost Knowledge before researching.
+3. For a factual question that appears outside its known rules, it tries keyless public web search.
+4. It extracts text from a few public pages and stores excerpts, source URLs, timestamps, and heuristic relevance scores as Ghost Knowledge candidates.
+5. Similar stable questions can reuse saved excerpts; time-sensitive questions are researched again.
+6. User feedback creates positive or negative examples that can influence future retrieval.
+7. The sidebar lets the user review personal memories and saved Ghost Knowledge.
 
 No generated code is executed. There is no external model API dependency. The `ddgs` search library and public websites may be rate-limited or block automated requests; research can fail without an API key.
 
