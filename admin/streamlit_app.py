@@ -67,6 +67,71 @@ def api(action: str, **payload):
         return None
 
 
+def maturity_report(stats: dict, storage: str) -> dict:
+    """Evidence-based engineering readiness score, not a measure of intelligence."""
+    rated = int(stats.get("rated_tasks", 0) or 0)
+    lessons = int(stats.get("lessons", 0) or 0)
+    ghost = int(stats.get("ghost_knowledge", 0) or 0)
+    persistent = storage != "sqlite_ephemeral"
+    components = [
+        {"Subsystem": "Persistent memory", "Score": 20 if persistent else 0, "Max": 20,
+         "State": "Configured path (verify durability)" if persistent else "Blocked · ephemeral SQLite",
+         "Next step": "Verify shared durable database" if persistent else "Move memory to managed PostgreSQL"},
+        {"Subsystem": "Semantic vector recall", "Score": 0, "Max": 20,
+         "State": "Not implemented", "Next step": "Add embeddings + vector index + retrieval tests"},
+        {"Subsystem": "Feedback loop", "Score": min(15, round(15 * rated / 25)), "Max": 15,
+         "State": f"{rated} rated tasks", "Next step": "Collect at least 25 ratings and evaluate improvements"},
+        {"Subsystem": "Knowledge consolidation", "Score": min(15, round(15 * (lessons + ghost) / 50)), "Max": 15,
+         "State": f"{lessons} lessons · {ghost} research records",
+         "Next step": "Deduplicate, link concepts, and verify candidate facts"},
+        {"Subsystem": "Always-on background worker", "Score": 0, "Max": 15,
+         "State": "Not implemented", "Next step": "Deploy a separate scheduled/continuous worker"},
+        {"Subsystem": "Evaluation & regression tests", "Score": 0, "Max": 15,
+         "State": "Not measured by runtime metrics", "Next step": "Create a benchmark set and pass/fail regression gate"},
+    ]
+    score = sum(item["Score"] for item in components)
+    label = "Foundation" if score < 25 else "Emerging" if score < 50 else "Developing" if score < 75 else "Advanced"
+    return {"score": score, "label": label, "components": components}
+
+
+def render_maturity(data: dict):
+    stats = data.get("stats", {})
+    storage = data.get("storage", "unknown")
+    report = maturity_report(stats, storage)
+    score = report["score"]
+    st.markdown(
+        f'<div class="brain-panel"><div class="eyebrow">EVOLVEAI / COGNITIVE SYSTEM STATUS</div>'
+        f'<h2>Brain maturity index <span class="neon">{score}<small>/100</small></span></h2>'
+        f'<p class="muted">Stage: <b>{report["label"]}</b> · Engineering capability score, not a claim about intelligence.</p></div>',
+        unsafe_allow_html=True,
+    )
+    st.progress(score / 100, text=f"Measured readiness · {score}%")
+    a, b, c, d = st.columns(4)
+    a.metric("Experiences", int(stats.get("tasks", 0) or 0))
+    b.metric("Feedback signals", int(stats.get("rated_tasks", 0) or 0))
+    c.metric("Lessons", int(stats.get("lessons", 0) or 0))
+    d.metric("Research records", int(stats.get("ghost_knowledge", 0) or 0))
+    st.subheader("Subsystem maturity")
+    frame = pd.DataFrame(report["components"])
+    frame["Readiness"] = frame.apply(lambda row: f'{row["Score"]}/{row["Max"]}', axis=1)
+    st.dataframe(frame[["Subsystem", "Readiness", "State", "Next step"]], use_container_width=True, hide_index=True)
+    st.subheader("Evolution roadmap")
+    roadmap = [
+        ("01", "Make memory durable", "Shared database; prove data survives cold starts and redeployments."),
+        ("02", "Give recall semantic meaning", "Embedding model, vector index, hybrid search, source-aware ranking."),
+        ("03", "Make learning measurable", "Feedback-driven lesson proposals, confidence tracking and controlled promotion."),
+        ("04", "Run the brain continuously", "Background consolidation worker with health checks and retry-safe jobs."),
+        ("05", "Prove improvement", "Benchmark the same prompts over time; reject changes that regress."),
+    ]
+    for number, title, detail in roadmap:
+        st.markdown(
+            f'<div class="roadmap"><span class="roadmap-number">{number}</span>'
+            f'<div><b>{title}</b><div class="muted">{detail}</div></div></div>',
+            unsafe_allow_html=True,
+        )
+    st.caption("The score is intentionally conservative. Vector recall, background processing, and a regression benchmark score zero until implemented and measured.")
+
+
 def require_login():
     if not ADMIN_PASSWORD:
         st.error("Admin login is locked until ADMIN_PASSWORD is set in Streamlit secrets.")
