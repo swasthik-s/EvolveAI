@@ -38,3 +38,18 @@ def test_feedback_updates_strategy_statistics(tmp_path):
     stats = memory.strategy_statistics()
     assert stats["answer_directly"]["count"] == 1
     assert stats["answer_directly"]["mean_score"] == 1.0
+
+
+def test_policy_can_change_strategy_after_repeated_negative_feedback(tmp_path):
+    memory = ExperienceMemory(str(tmp_path / "adaptive-policy.db"))
+    for index in range(4):
+        task_id = memory.save_task(
+            f"Question {index}?", "Unhelpful answer", "rules",
+            strategy="answer_directly",
+        )
+        memory.rate_task(task_id, 0.0, "Not useful")
+
+    policy = CommunicationPolicy(memory)
+    frame = understand_message("What is this?")
+    decision = policy.choose(frame)
+    assert decision.action == "ask_clarification"
