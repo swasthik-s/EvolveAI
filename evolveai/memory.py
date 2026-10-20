@@ -25,8 +25,17 @@ class ExperienceMemory:
         with self._connect() as conn:
             conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
                 id TEXT PRIMARY KEY, prompt TEXT NOT NULL, answer TEXT NOT NULL,
-                mode TEXT NOT NULL, score REAL, feedback TEXT, created_at TEXT NOT NULL
+                mode TEXT NOT NULL, score REAL, feedback TEXT, created_at TEXT NOT NULL,
+                strategy TEXT NOT NULL DEFAULT ''
             )""")
+            task_columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+            if "strategy" not in task_columns:
+                conn.execute("ALTER TABLE tasks ADD COLUMN strategy TEXT NOT NULL DEFAULT ''")
+            conn.execute("""CREATE TABLE IF NOT EXISTS strategy_outcomes (
+                id TEXT PRIMARY KEY, task_id TEXT NOT NULL, strategy TEXT NOT NULL,
+                score REAL NOT NULL, feedback TEXT NOT NULL, created_at TEXT NOT NULL
+            )""")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_strategy_outcomes_strategy ON strategy_outcomes(strategy)")
             conn.execute("""CREATE TABLE IF NOT EXISTS lessons (
                 id TEXT PRIMARY KEY, task TEXT NOT NULL, lesson TEXT NOT NULL,
                 confidence REAL NOT NULL, source TEXT NOT NULL, created_at TEXT NOT NULL
@@ -44,22 +53,27 @@ class ExperienceMemory:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created_at)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_ghost_created ON ghost_knowledge(created_at)")
 
-    def save_task(self, prompt, answer, mode="rules"):
+    def save_task(self, prompt, answer, mode="rules", strategy=""):
         task_id = uuid.uuid4().hex[:12]
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO tasks(id,prompt,answer,mode,created_at) VALUES(?,?,?,?,?)",
-                (task_id, prompt, answer, mode, now_iso()),
+                "INSERT INTO tasks(id,prompt,answer,mode,created_at,strategy) VALUES(?,?,?,?,?,?)",
+                (task_id, prompt, answer, mode, now_iso(), strategy),
             )
         return task_id
 
     def rate_task(self, task_id, score, feedback=""):
         score = max(0.0, min(1.0, float(score)))
         with self._connect() as conn:
-            row = conn.execute("SELECT prompt, answer FROM tasks WHERE id=?", (task_id,)).fetchone()
+            row = conn.execute("SELECT prompt, answer, strategy FROM tasks WHERE id=?", (task_id,)).fetchone()
             if not row:
                 return False
             conn.execute("UPDATE tasks SET score=?, feedback=? WHERE id=?", (score, feedback, task_id))
+            if row["strategy"]:
+                conn.execute(
+                    "INSERT INTO strategy_outcomes(id,task_id,strategy,score,feedback,created_at) VALUES(?,?,?,?,?,?)",
+                    (uuid.uuid4().hex[:12], task_id, row["strategy"], score, str(feedback or ""), now_iso()),
+                )
             if score >= 0.8:
                 lesson = "A response to this prompt was marked helpful. Example response: " + row["answer"][:1200]
                 self._insert_lesson(conn, row["prompt"], lesson, score, "user_feedback")
@@ -75,6 +89,35 @@ class ExperienceMemory:
             "INSERT INTO lessons(id,task,lesson,confidence,source,created_at) VALUES(?,?,?,?,?,?)",
             (uuid.uuid4().hex[:12], task, lesson, float(confidence), source, now_iso()),
         )
+
+    def record_strategy_outcome(self, task_id, strategy, score, feedback=""):
+        """Record explicit feedback for a chosen communication strategy."""
+        score = max(0.0, min(1.0, float(score)))
+        strategy = str(strategy or "").strip()
+        if not strategy:
+            return False
+        with self._connect() as conn:
+            row = conn.execute("SELECT id FROM tasks WHERE id=?", (task_id,)).fetchone()
+            if not row:
+                return False
+            conn.execute("UPDATE tasks SET strategy=? WHERE id=?", (strategy, task_id))
+            conn.execute(
+                "INSERT INTO strategy_outcomes(id,task_id,strategy,score,feedback,created_at) VALUES(?,?,?,?,?,?)",
+                (uuid.uuid4().hex[:12], task_id, strategy, score, str(feedback or ""), now_iso()),
+            )
+        return True
+
+    def strategy_statistics(self):
+        """Aggregate feedback by strategy without exposing individual conversations."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT strategy, COUNT(*) AS count, AVG(score) AS mean_score "
+                "FROM strategy_outcomes GROUP BY strategy"
+            ).fetchall()
+        return {
+            row["strategy"]: {"count": int(row["count"]), "mean_score": float(row["mean_score"])}
+            for row in rows
+        }
 
     def add_lesson(self, task, lesson, confidence=0.7, source="user"):
         confidence = max(0.0, min(1.0, float(confidence)))
