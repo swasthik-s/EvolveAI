@@ -5,7 +5,7 @@ from evolveai.memory import ExperienceMemory
 
 
 def test_understanding_distinguishes_request_question_correction_and_statement():
-    assert understand_message("Can you build this?").speech_act == "question"
+    assert understand_message("Can you build this?").speech_act == "request"
     assert understand_message("Build a tracker").speech_act == "request"
     assert understand_message("No, I meant the second item").speech_act == "correction"
     assert understand_message("I work night shifts").speech_act == "statement"
