@@ -9,6 +9,7 @@ from .reasoning import build_plan
 from .cognition import understand
 from .relevance import assess_relevance, is_personal_context_query
 from .identity import answer_identity_question
+from .response_adaptation import adapt_response
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
@@ -282,6 +283,7 @@ class EvolveAgent:
         identity_answer = answer_identity_question(prompt)
         if identity_answer is not None:
             stage("Resolving assistant identity")
+            identity_answer = adapt_response(prompt, identity_answer, history, intent="assistant_identity")
             task_id = self.memory.save_task(prompt, identity_answer, "assistant_identity")
             stage("Preparing a concise response")
             return {
@@ -299,6 +301,7 @@ class EvolveAgent:
         identity_answer = self._personal_identity_answer(prompt, memories)
         if identity_answer is not None:
             stage("Resolving personal identity")
+            identity_answer = adapt_response(prompt, identity_answer, history, intent="personal_context")
             task_id = self.memory.save_task(prompt, identity_answer, "personal_context")
             stage("Preparing a concise response")
             return {
@@ -325,6 +328,8 @@ class EvolveAgent:
                 answer, mode = self._research_answer(effective_prompt, progress=progress)
             else:
                 mode = "rules"
+        stage("Adapting response to conversation context")
+        answer = adapt_response(prompt, answer, history, intent=mode)
         stage("Preparing a concise response")
         task_id = self.memory.save_task(prompt, answer, mode)
         return {
