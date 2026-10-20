@@ -15,7 +15,8 @@ app = FastAPI(title="EvolveAI API", docs_url=None, redoc_url=None)
 # Vercel's local filesystem is ephemeral. Use durable storage before production.
 DB_PATH = os.getenv("EVOLVEAI_DB_PATH", "/tmp/evolveai.db")
 _memory: ExperienceMemory | None = None
-_agent: EvolveAgent | None = None\n_activity: ActivityJournal | None = None
+_agent: EvolveAgent | None = None
+_activity: ActivityJournal | None = None
 
 
 def get_agent() -> EvolveAgent:
@@ -49,6 +50,8 @@ class ChatRequest(BaseModel):
     key: str = Field(default="", max_length=160)
     value: str = Field(default="", max_length=4000)
     query: str = Field(default="", max_length=1000)
+    category: str = Field(default="", max_length=60)
+    status: str = Field(default="", max_length=30)
     limit: int = Field(default=50, ge=1, le=500)
 
 
@@ -72,6 +75,9 @@ def chat(
             require_admin(x_admin_token)
             agent = get_agent()
             memory = agent.memory
+            activity = _activity or ActivityJournal(DB_PATH)
+            if payload.action == "admin_activity":
+                return {"events": activity.recent(payload.limit, payload.category, payload.status, payload.query), "activity_stats": activity.stats()}
 
             if payload.action == "admin_overview":
                 return {
@@ -117,7 +123,10 @@ def chat(
         if not payload.message.strip():
             raise HTTPException(status_code=422, detail="message cannot be empty.")
         history = [item.model_dump() for item in payload.history]
+        journal = _activity or ActivityJournal(DB_PATH)
+        journal.record("user_task", "chat_request", "started", "User request accepted by the agent.", details={"mode": "user_chat"})
         result = agent.run(payload.message.strip(), history=history)
+        journal.record("user_task", "chat_request", "completed", "Agent returned a response.", task_id=str(result.get("task_id") or ""), details={"mode": result.get("mode", "rules")})
         return {
             "answer": result.get("answer", ""),
             "task_id": result.get("task_id"),
