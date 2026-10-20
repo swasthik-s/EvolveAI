@@ -28,7 +28,8 @@ def test_multiple_repeats_are_recognized():
     ]
     assert repeated_question_count("WHO ARE YOU?!", history) == 2
     result = adapt_response("Who are you?", "I am EvolveAI.", history, "assistant_identity")
-    assert "Checking whether I’ll change my story" in result
+    assert "Still here." in result
+    assert "My identity is the same" in result
 
 
 def test_repeated_personal_identity_uses_saved_name():
