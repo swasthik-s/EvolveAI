@@ -1,52 +1,57 @@
 # EvolveAI
 
-A mobile-first, instruction-driven chat agent built for Streamlit Community Cloud's free tier.
+EvolveAI is a custom, mobile-friendly assistant UI built with **Next.js, Tailwind CSS, and shadcn-style components**, connected to the existing Python instruction-driven engine. The intended deployment target is one Vercel project.
 
-## Design principle
+## Product principles
 
-EvolveAI does **not** call OpenAI or any other hosted language model. Its first version uses explicit Python instructions and deterministic rules. It can store facts the user teaches it, retrieve relevant past examples, handle basic arithmetic, and use 👍 / 👎 feedback to influence which examples are surfaced in future replies. For factual questions outside its current rules and saved knowledge, it can try free, keyless public web search and save source excerpts as Ghost Knowledge.
+- **No hosted generative model:** responses come from explicit Python rules, saved context, and deterministic processing of public web research.
+- **Inspectable behavior:** the engine classifies requests, selects a response path, and records its strategy.
+- **User feedback:** 👍 / 👎 feedback is recorded and can influence future retrieval and communication-strategy selection.
+- **Honest limitations:** this is a bounded prototype, not a general-purpose LLM. Research ranking is heuristic and may miss context.
 
-This is an honest prototype, not AGI. Feedback does not train model weights, and a rule-based system cannot yet answer arbitrary open-ended questions like a general-purpose language model. The deterministic reasoning planner classifies the message, resolves short follow-ups against recent chat context, chooses a route, checks saved knowledge, and exposes its execution stages in the UI. Web research separates retrieval from response generation: it extracts paragraph text, filters boilerplate, ranks relevant sentences, removes duplicates, builds a concise evidence-based answer, and shows source links. This is a deterministic evidence-processing engine, not human-like semantic reasoning; its scores are heuristics and can still miss context or make mistakes.
+## Deploy on Vercel
 
-## Deploy on Streamlit Community Cloud
+1. Push this repository to GitHub.
+2. In [Vercel](https://vercel.com/new), import `swasthik-s/EvolveAI`.
+3. Keep the project root set to the repository root.
+4. Use the Next.js framework preset. Vercel should detect `package.json` and build the frontend.
+5. Deploy, then verify the home page and the `/api/chat` endpoint.
 
-1. Open https://share.streamlit.io/
-2. Create an app from repository `swasthik-s/EvolveAI`.
-3. Select branch `main` and main file `app.py`.
-4. Deploy. No API key or external model credentials are required.
+The frontend is a Next.js App Router app at `app/`. The Python functions are in `api/chat.py` and `api/feedback.py`; Python dependencies are in the root `requirements.txt`.
 
-## Run locally
+## Local development
+
+Frontend:
+
+```bash
+npm install
+npm run dev
+```
+
+Python API (requires Python 3.11+ recommended):
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+# Windows: .venv\\Scripts\\activate
+# macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run app.py
+uvicorn api.chat:app --reload
 ```
 
-## How the learning loop works
+The Python function is configured for Vercel's function runtime. For local API testing, the command above serves the chat function on port 8000; use a local rewrite/proxy or adjust the frontend request URL during local testing if needed.
 
-1. The agent follows the policies in `evolveai/instructions.py`.
-2. It checks programmed rules, personal memories, and Ghost Knowledge before researching.
-3. For a factual question that appears outside its known rules, it tries keyless public web search.
-4. It extracts page paragraphs, ranks relevant sentences, filters common navigation noise, and synthesizes a short answer with source links.
-5. The full relevant excerpts and source URLs are saved as Ghost Knowledge candidates; later questions reuse and process that evidence rather than dumping the raw page text.
-6. Time-sensitive questions are researched again.
-7. User feedback creates positive or negative examples that can influence future retrieval.
-8. The sidebar lets the user review personal memories and saved Ghost Knowledge.
+## Storage warning
 
-No generated code is executed. There is no external model API dependency. The `ddgs` search library and public websites may be rate-limited or block automated requests; research can fail without an API key.
+The Vercel Python function currently defaults to SQLite at `/tmp/evolveai.db`. **Vercel's function filesystem is ephemeral**: data may disappear between cold starts, and separate function instances may not share the same file. Browser chat threads are stored in the user's local browser, but that is not the same as durable server-side memory.
 
-## Free-cloud storage limitation
+Before relying on long-term personal memories or learning in production, configure a durable database and point the engine at it. Do not store sensitive personal data in ephemeral function storage and assume it will persist.
 
-The app stores data in `data/evolveai.db`. Streamlit Community Cloud's local filesystem is not guaranteed to persist across restarts, rebuilds, or redeployments. This means the chat's learning data may reset. Durable cross-deployment memory will require a separate persistent database or storage service; this version intentionally avoids adding a paid dependency.
+## Existing Python engine and tests
 
-## Tests
+The current engine remains under `evolveai/`. To run the existing tests locally:
 
-Run `pytest -q` locally. The project includes tests for memory, Ghost Knowledge retrieval, the uncertainty-triggered research decision, and deterministic evidence synthesis; the skills module is retained for future reviewed skill drafts, but the current chat UI stays focused on conversation.
+```bash
+pytest -q
+```
 
-## Custom understanding engine (no generative model)
-
-The first cognition layer lives in `evolveai/cognition.py`. It parses common question forms into a structured frame, canonicalizes a small reviewed set of entity aliases (for example, “ironman” → “Iron Man”), records why a rule matched, and produces a more specific web-search query. Unknown subjects are preserved rather than confidently guessed. The agent uses this frame before web retrieval, and tests cover canonicalization and safe fallback.
-
-This borrows *ideas*, not code, from established NLP approaches: spaCy demonstrates practical pipelines for linguistic features and entity processing ([spaCy 101](https://spacy.io/usage/spacy-101/)); ConceptNet provides a commonsense relation graph that can inform a later knowledge layer ([ConceptNet API](https://github.com/commonsense/conceptnet5/wiki/API)). EvolveAI currently does not depend on either package or service. We are implementing a small, transparent engine first so each decision can be tested and explained. Its entity lexicon is intentionally small; it is not yet general-purpose language understanding.
+No paid model API is required. The free public web-search dependency may be rate-limited or blocked by upstream websites.
