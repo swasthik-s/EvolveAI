@@ -10,6 +10,9 @@ from .cognition import understand
 from .relevance import assess_relevance, is_personal_context_query
 from .identity import answer_identity_question
 from .response_adaptation import adapt_response
+from .conversation.understanding import understand_message
+from .conversation.state import build_conversation_state
+from .learning.policy import CommunicationPolicy
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
@@ -278,19 +281,25 @@ class EvolveAgent:
             if progress:
                 progress(label)
 
-        # Tier 1: resolve assistant identity before planning, memory search, or web access.
+        # Build an inspectable conversation frame and choose a strategy before composing.
         stage("Understanding your message")
+        conversation_frame = understand_message(prompt, history or [])
+        conversation_state = build_conversation_state(history or [], prompt)
+        communication_decision = CommunicationPolicy(self.memory).choose(conversation_frame, conversation_state)
         identity_answer = answer_identity_question(prompt)
         if identity_answer is not None:
             stage("Resolving assistant identity")
             identity_answer = adapt_response(prompt, identity_answer, history, intent="assistant_identity")
-            task_id = self.memory.save_task(prompt, identity_answer, "assistant_identity")
+            task_id = self.memory.save_task(prompt, identity_answer, "assistant_identity", strategy=communication_decision.action)
             stage("Preparing a concise response")
             return {
                 "task_id": task_id, "answer": identity_answer, "mode": "assistant_identity",
                 "lessons_considered": [], "skill_suggestions": [],
                 "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
                 "reasoning_plan": {"intent": "assistant_identity", "follow_up": False,
+                                   "speech_act": conversation_frame.speech_act,
+                                   "communication_action": communication_decision.action,
+                                   "communication_reason": communication_decision.reason,
                                    "steps": ["classify_identity_question", "resolve_assistant_identity", "compose_response"]},
             }
 
@@ -302,13 +311,16 @@ class EvolveAgent:
         if identity_answer is not None:
             stage("Resolving personal identity")
             identity_answer = adapt_response(prompt, identity_answer, history, intent="personal_context")
-            task_id = self.memory.save_task(prompt, identity_answer, "personal_context")
+            task_id = self.memory.save_task(prompt, identity_answer, "personal_context", strategy=communication_decision.action)
             stage("Preparing a concise response")
             return {
                 "task_id": task_id, "answer": identity_answer, "mode": "personal_context",
                 "lessons_considered": [], "skill_suggestions": [],
                 "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
                 "reasoning_plan": {"intent": "personal_identity", "follow_up": False,
+                                   "speech_act": conversation_frame.speech_act,
+                                   "communication_action": communication_decision.action,
+                                   "communication_reason": communication_decision.reason,
                                    "steps": ["classify_personal_question", "retrieve_personal_memory", "compose_response"]},
             }
 
@@ -331,10 +343,15 @@ class EvolveAgent:
         stage("Adapting response to conversation context")
         answer = adapt_response(prompt, answer, history, intent=mode)
         stage("Preparing a concise response")
-        task_id = self.memory.save_task(prompt, answer, mode)
+        task_id = self.memory.save_task(prompt, answer, mode, strategy=communication_decision.action)
         return {
             "task_id": task_id, "answer": answer, "mode": mode,
             "lessons_considered": lessons, "skill_suggestions": [],
             "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
-            "reasoning_plan": {"intent": plan.intent, "follow_up": plan.is_follow_up, "steps": list(plan.steps)},
+            "reasoning_plan": {"intent": plan.intent, "follow_up": plan.is_follow_up,
+                               "speech_act": conversation_frame.speech_act,
+                               "communication_action": communication_decision.action,
+                               "communication_reason": communication_decision.reason,
+                               "communication_confidence": communication_decision.confidence,
+                               "steps": list(plan.steps)},
         }
