@@ -153,10 +153,10 @@ export default function Home() {
       messages: thread.messages.map((item) => item.id === message.id ? { ...item, feedback: rating } : item),
     }));
     try {
-      await fetch("/api/feedback", {
+      await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task_id: message.taskId, score: rating === "up" ? 1 : 0, feedback: rating === "up" ? "Helpful" : "Not helpful" }),
+        body: JSON.stringify({ action: "feedback", task_id: message.taskId, score: rating === "up" ? 1 : 0, feedback: rating === "up" ? "Helpful" : "Not helpful" }),
       });
     } catch { /* Feedback is best-effort; do not interrupt the conversation. */ }
   }
