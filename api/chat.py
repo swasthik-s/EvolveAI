@@ -41,11 +41,15 @@ class ChatRequest(BaseModel):
 
 
 @app.get("/")
+@app.get("/api/chat")
+@app.get("/chat")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "EvolveAI"}
 
 
 @app.post("/")
+@app.post("/api/chat")
+@app.post("/chat")
 def chat(payload: ChatRequest) -> dict[str, Any]:
     try:
         agent = get_agent()
