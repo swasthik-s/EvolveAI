@@ -8,6 +8,7 @@ from .thinking import process_evidence
 from .reasoning import build_plan
 from .cognition import understand
 from .relevance import assess_relevance, is_personal_context_query
+from .identity import answer_identity_question
 
 
 _QUESTION_STARTS = ("what ", "who ", "when ", "where ", "why ", "how ", "which ", "is ", "are ", "was ", "were ", "does ", "do ", "did ", "can ", "could ", "would ", "should ", "will ", "tell me about ", "explain ", "define ", "find out ", "look up ")
@@ -280,17 +281,21 @@ class EvolveAgent:
         memories = self.memory.memories()
         lessons = self.memory.search_lessons(effective_prompt, limit=8)
 
-        # Personal identity is a conversation-context question, never a web-search query.
-        identity_answer = self._personal_identity_answer(prompt, memories)
+        # Identity is resolved before any Ghost Knowledge or web retrieval.
+        identity_answer = answer_identity_question(prompt)
+        identity_mode = "assistant_identity"
+        if identity_answer is None:
+            identity_answer = self._personal_identity_answer(prompt, memories)
+            identity_mode = "personal_context"
         if identity_answer is not None:
-            stage("Answering from personal context")
-            task_id = self.memory.save_task(prompt, identity_answer, "personal_context")
+            stage("Answering from identity and conversation context")
+            task_id = self.memory.save_task(prompt, identity_answer, identity_mode)
             return {
-                "task_id": task_id, "answer": identity_answer, "mode": "personal_context",
+                "task_id": task_id, "answer": identity_answer, "mode": identity_mode,
                 "lessons_considered": lessons, "skill_suggestions": [],
                 "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
-                "reasoning_plan": {"intent": "personal_identity", "follow_up": False,
-                                   "steps": ["interpret_message", "retrieve_personal_memory", "compose_response"]},
+                "reasoning_plan": {"intent": identity_mode, "follow_up": False,
+                                   "steps": ["classify_identity_question", "resolve_identity", "compose_response"]},
             }
 
         stage("Checking saved knowledge")
