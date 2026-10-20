@@ -222,8 +222,10 @@ class ExperienceMemory:
             memories = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
             lessons = conn.execute("SELECT COUNT(*) FROM lessons").fetchone()[0]
             ghost = conn.execute("SELECT COUNT(*) FROM ghost_knowledge").fetchone()[0]
+            strategy_feedback = conn.execute("SELECT COUNT(*) FROM strategy_outcomes").fetchone()[0]
         return {
             "tasks": total, "rated_tasks": rated,
             "success_rate": good / rated if rated else 0.0,
             "memories": memories, "lessons": lessons, "ghost_knowledge": ghost,
+            "strategy_feedback": strategy_feedback,
         }
