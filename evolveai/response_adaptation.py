@@ -52,7 +52,7 @@ def adapt_response(message, answer, history=None, intent="general"):
         if name:
             if count == 1:
                 return f"Still you, {name} 😄 I haven’t lost track."
-            return f"Yep, {name—you’re still you 😄. I remember; no need to reintroduce yourself."
+            return f"Yep, {name}—you’re still you 😄. I remember; no need to reintroduce yourself."
         if count == 1:
             return "You’re the person I’m chatting with 😄. I still don’t have your name saved, so I won’t guess."
         return "Same answer as before: you’re the person I’m chatting with. I’d need your name to identify you more specifically."
