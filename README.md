@@ -17,7 +17,7 @@ EvolveAI is a custom, mobile-friendly assistant UI built with **Next.js, Tailwin
 4. Use the Next.js framework preset. Vercel should detect `package.json` and build the frontend.
 5. Deploy, then verify the home page and the `/api/chat` endpoint.
 
-The frontend is a Next.js App Router app at `app/`. The Python functions are in `api/chat.py` and `api/feedback.py`; Python dependencies are in the root `requirements.txt`.
+The frontend is a Next.js App Router app at `app/`. The Python function is in `api/chat.py`; chat and feedback actions share the same function so they can reuse the same warm-instance memory. Python dependencies are in the root `requirements.txt`.
 
 ## Local development
 
