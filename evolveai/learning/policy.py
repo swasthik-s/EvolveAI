@@ -26,6 +26,18 @@ _BASELINE = {
 }
 
 
+_ALTERNATIVES = {
+    "greeting": ("acknowledge_statement",),
+    "question": ("ask_clarification",),
+    "request": ("ask_clarification",),
+    "follow_up": ("ask_clarification", "answer_directly"),
+    "correction": ("ask_clarification", "answer_directly"),
+    "statement": ("answer_directly", "ask_clarification"),
+    "uncertain_statement": ("acknowledge_statement",),
+    "empty": (),
+}
+
+
 def _strategy_for_act(speech_act):
     return {
         "greeting": "greet",
@@ -46,10 +58,11 @@ class CommunicationPolicy:
     def choose(self, frame, state=None):
         preferred = _strategy_for_act(frame.speech_act)
         candidates = [preferred]
+        for alternative in _ALTERNATIVES.get(frame.speech_act, ("ask_clarification",)):
+            if alternative not in candidates:
+                candidates.append(alternative)
         if frame.confidence < 0.6 and "ask_clarification" not in candidates:
             candidates.append("ask_clarification")
-        if frame.speech_act == "statement" and "answer_directly" not in candidates:
-            candidates.append("answer_directly")
 
         stats = self.memory.strategy_statistics() if self.memory and hasattr(self.memory, "strategy_statistics") else {}
         scored = []
