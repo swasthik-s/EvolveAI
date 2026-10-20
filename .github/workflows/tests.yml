@@ -15,7 +15,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt pytest
+      - run: pip install -r requirements.txt -r admin/requirements.txt pytest
+      - run: python -m compileall -q api evolveai admin
       - run: pytest -q
 
   frontend-build:
