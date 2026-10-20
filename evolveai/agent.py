@@ -200,8 +200,8 @@ class EvolveAgent:
                 continue
             return (
                 processed["answer"]
-                + "\\n\\nSource: [" + item["title"] + "](" + item["source_url"] + ")"
-                + "\\n\\nReused from Ghost Knowledge; check the source if accuracy or freshness matters."
+                + "\n\nSource: [" + item["title"] + "](" + item["source_url"] + ")"
+                + "\n\nReused from Ghost Knowledge; check the source if accuracy or freshness matters."
             )
         return None
 
