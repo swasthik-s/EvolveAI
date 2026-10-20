@@ -61,6 +61,7 @@ with st.sidebar:
     stats = memory.stats()
     st.metric("Saved memories", stats["memories"])
     st.metric("Learning examples", stats["lessons"])
+    st.metric("Strategy feedback", stats.get("strategy_feedback", 0))
     st.metric("Ghost Knowledge", stats.get("ghost_knowledge", 0))
     st.caption("On Streamlit Community Cloud, local files may reset after a restart or redeploy.")
     with st.expander("Review saved memories", expanded=False):
@@ -87,7 +88,8 @@ with st.sidebar:
         st.write("2. If a factual question is outside its knowledge, it tries free public web search.")
         st.write("3. It stores page excerpts and source links as research candidates, not guaranteed facts.")
         st.write("4. It reuses saved evidence for similar questions, but refreshes time-sensitive questions.")
-        st.write("5. Feedback adds examples; it does not train model weights or execute generated code.")
+        st.write("5. Feedback adds examples and updates local communication-strategy scores; it does not train model weights or execute generated code.")
+        st.write("6. Conversation planning identifies speech acts, follow-ups, and corrections before the response path is chosen.")
     if st.button("Clear this chat", use_container_width=True):
         st.session_state.chat_history = []
         st.rerun()
