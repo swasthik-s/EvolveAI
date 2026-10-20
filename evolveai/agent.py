@@ -178,7 +178,8 @@ class EvolveAgent:
         return low.endswith("?") or low.startswith(_QUESTION_STARTS)
 
     def _known_answer(self, prompt):
-        if is_personal_context_query(prompt):
+        # Identity and personal-context questions must never be answered from web facts.
+        if answer_identity_question(prompt) is not None or is_personal_context_query(prompt):
             return None
         query_terms = _terms(prompt)
         if not query_terms or query_terms & _CURRENT_TERMS:
@@ -205,17 +206,19 @@ class EvolveAgent:
         return None
 
     def _research_answer(self, prompt, progress=None):
-        # Defense in depth: personal-context questions are never sent to web search.
+        # Defense in depth: identity questions never enter web research.
+        identity_answer = answer_identity_question(prompt)
+        if identity_answer is not None:
+            return identity_answer, "assistant_identity"
         if is_personal_context_query(prompt):
             return self._personal_identity_answer(prompt, self.memory.memories()) or (
                 "You're the person I'm talking to. I don't have enough personal context saved to identify you."
             ), "personal_context"
-        # Turn the message into a structured query before searching. This is a
-        # transparent symbolic step, not generated language.
+
         frame = understand(prompt)
         research_query = frame.search_query or prompt
         if progress:
-            progress('Searching public sources')
+            progress("Searching public sources")
         try:
             evidence = research(research_query, max_results=5)
         except Exception:
@@ -228,23 +231,23 @@ class EvolveAgent:
             ), "rules"
 
         if progress:
-            progress('Comparing evidence and checking relevance')
+            progress("Comparing evidence and checking relevance")
 
-        # Filter evidence against the user's actual question before saving or answering.
         relevant_evidence = []
         for item in evidence:
             relevance = assess_relevance(
                 prompt, item.get("title", ""), item.get("excerpt", ""),
                 saved_question=prompt,
             )
-            if relevance.accepted:
-                relevant_evidence.append(item)
-                self.memory.add_ghost_knowledge(
-                    question=prompt, fact=item["excerpt"], title=item["title"],
-                    source_url=item["url"],
-                    confidence=min(float(item.get("confidence", 0.4)), relevance.score),
-                    status="candidate",
-                )
+            if not relevance.accepted:
+                continue
+            relevant_evidence.append(item)
+            self.memory.add_ghost_knowledge(
+                question=prompt, fact=item["excerpt"], title=item["title"],
+                source_url=item["url"],
+                confidence=min(float(item.get("confidence", 0.4)), relevance.score),
+                status="candidate",
+            )
 
         if not relevant_evidence:
             return (
@@ -274,29 +277,41 @@ class EvolveAgent:
             if progress:
                 progress(label)
 
+        # Tier 1: resolve assistant identity before planning, memory search, or web access.
         stage("Understanding your message")
-        plan = build_plan(prompt, history or [])
-        effective_prompt = plan.working_query
+        identity_answer = answer_identity_question(prompt)
+        if identity_answer is not None:
+            stage("Resolving assistant identity")
+            task_id = self.memory.save_task(prompt, identity_answer, "assistant_identity")
+            stage("Preparing a concise response")
+            return {
+                "task_id": task_id, "answer": identity_answer, "mode": "assistant_identity",
+                "lessons_considered": [], "skill_suggestions": [],
+                "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
+                "reasoning_plan": {"intent": "assistant_identity", "follow_up": False,
+                                   "steps": ["classify_identity_question", "resolve_assistant_identity", "compose_response"]},
+            }
+
         stage("Recalling relevant memory and prior experience")
         memories = self.memory.memories()
-        lessons = self.memory.search_lessons(effective_prompt, limit=8)
 
-        # Identity is resolved before any Ghost Knowledge or web retrieval.
-        identity_answer = answer_identity_question(prompt)
-        identity_mode = "assistant_identity"
-        if identity_answer is None:
-            identity_answer = self._personal_identity_answer(prompt, memories)
-            identity_mode = "personal_context"
+        # Tier 2: resolve user identity from personal memory, never from web knowledge.
+        identity_answer = self._personal_identity_answer(prompt, memories)
         if identity_answer is not None:
-            stage("Answering from identity and conversation context")
-            task_id = self.memory.save_task(prompt, identity_answer, identity_mode)
+            stage("Resolving personal identity")
+            task_id = self.memory.save_task(prompt, identity_answer, "personal_context")
+            stage("Preparing a concise response")
             return {
-                "task_id": task_id, "answer": identity_answer, "mode": identity_mode,
-                "lessons_considered": lessons, "skill_suggestions": [],
+                "task_id": task_id, "answer": identity_answer, "mode": "personal_context",
+                "lessons_considered": [], "skill_suggestions": [],
                 "instructions_count": len(CORE_RULES), "learning_rules_count": len(LEARNING_POLICY),
-                "reasoning_plan": {"intent": identity_mode, "follow_up": False,
-                                   "steps": ["classify_identity_question", "resolve_identity", "compose_response"]},
+                "reasoning_plan": {"intent": "personal_identity", "follow_up": False,
+                                   "steps": ["classify_personal_question", "retrieve_personal_memory", "compose_response"]},
             }
+
+        plan = build_plan(prompt, history or [])
+        effective_prompt = plan.working_query
+        lessons = self.memory.search_lessons(effective_prompt, limit=8)
 
         stage("Checking saved knowledge")
         known = self._known_answer(effective_prompt) if plan.intent == "question" and not plan.needs_fresh_research else None
