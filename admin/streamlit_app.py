@@ -23,7 +23,7 @@ def secret(name: str, default: str = "") -> str:
 
 ADMIN_PASSWORD = secret("ADMIN_PASSWORD")
 ADMIN_TOKEN = secret("EVOLVEAI_ADMIN_TOKEN")
-API_URL = secret("EVOLVEAI_API_URL", "https://eevolveai.vercel.app/api/chat").rstrip("/")
+API_URL = secret("EVOLVEAI_API_URL").rstrip("/")
 
 st.markdown("""
 <style>
@@ -37,6 +37,9 @@ st.markdown("""
 
 
 def api(action: str, **payload):
+    if not API_URL:
+        st.error("EVOLVEAI_API_URL is not configured. Set it to your deployed Vercel endpoint, e.g. https://your-app.vercel.app/api/chat.")
+        return None
     if not ADMIN_TOKEN:
         st.error("EVOLVEAI_ADMIN_TOKEN is not configured in this app's secrets.")
         return None
@@ -85,7 +88,7 @@ with st.sidebar:
     page = st.radio("Control panel", ["Circuit Board", "Engine Console", "Memory", "Learning Lab", "Diagnostics"])
     st.divider()
     st.caption("Backend")
-    st.code(API_URL, language=None)
+    st.code(API_URL or "EVOLVEAI_API_URL not configured", language=None)
     if st.button("Log out", use_container_width=True):
         st.session_state.clear()
         st.rerun()
