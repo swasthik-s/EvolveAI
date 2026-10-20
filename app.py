@@ -51,6 +51,10 @@ with top_left:
     st.markdown('<p class="evolve-subtitle">A personal assistant that recalls, researches, and learns from feedback.</p>', unsafe_allow_html=True)
 with top_right:
     st.caption("Preview")
+    st.caption("Build: identity-routing-v2")
+    if st.button("New chat", key="new_chat_top", use_container_width=True):
+        st.session_state.chat_history = []
+        st.rerun()
 
 with st.sidebar:
     st.subheader("Your EvolveAI")
