@@ -8,13 +8,14 @@ from pydantic import BaseModel, Field
 
 from evolveai.agent import EvolveAgent
 from evolveai.memory import ExperienceMemory
+from evolveai.activity import ActivityJournal
 
 app = FastAPI(title="EvolveAI API", docs_url=None, redoc_url=None)
 
 # Vercel's local filesystem is ephemeral. Use durable storage before production.
 DB_PATH = os.getenv("EVOLVEAI_DB_PATH", "/tmp/evolveai.db")
 _memory: ExperienceMemory | None = None
-_agent: EvolveAgent | None = None
+_agent: EvolveAgent | None = None\n_activity: ActivityJournal | None = None
 
 
 def get_agent() -> EvolveAgent:
@@ -41,7 +42,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(default="", max_length=4000)
     history: list[ChatMessage] = Field(default_factory=list, max_length=12)
-    action: str = Field(default="chat", pattern="^(chat|feedback|admin_overview|admin_tasks|admin_memories|admin_lessons|admin_ghost|admin_add_memory|admin_delete_memory|admin_test)$")
+    action: str = Field(default="chat", pattern="^(chat|feedback|admin_overview|admin_tasks|admin_memories|admin_lessons|admin_ghost|admin_add_memory|admin_delete_memory|admin_test|admin_activity)$")
     task_id: str = Field(default="", max_length=64)
     score: float = Field(default=0.5, ge=0, le=1)
     feedback: str = Field(default="", max_length=300)
