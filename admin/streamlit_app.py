@@ -32,6 +32,13 @@ st.markdown("""
   div[data-testid="stMetric"] { background: #121c31; padding: 16px; border: 1px solid #26344e; border-radius: 12px; }
   .hero { padding: 1.2rem 1.4rem; border: 1px solid #26344e; border-radius: 16px; background: linear-gradient(120deg,#111a2f,#14243a); margin-bottom: 1rem; }
   .muted { color: #9caec8; }
+  .brain-panel { padding: 1.4rem; border: 1px solid #30476d; border-radius: 18px; background: radial-gradient(circle at 85% 10%, #253d63 0%, #111a2f 45%, #0b1020 100%); margin-bottom: 1rem; box-shadow: 0 0 28px rgba(54,112,210,.10); }
+  .brain-panel h2 { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:.5rem 0; }
+  .eyebrow { letter-spacing:.18em; color:#79c8ff; font-size:.72rem; font-weight:700; }
+  .neon { color:#73e2ff; font-size:2rem; text-shadow:0 0 16px rgba(115,226,255,.35); }
+  .neon small { color:#9caec8; font-size:.9rem; text-shadow:none; }
+  .roadmap { display:flex; gap:1rem; align-items:flex-start; padding:.9rem 1rem; border:1px solid #26344e; border-radius:12px; background:#10182b; margin:.55rem 0; }
+  .roadmap-number { color:#73e2ff; font-weight:800; font-size:1.1rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -85,7 +92,7 @@ require_login()
 with st.sidebar:
     st.markdown("## 🧠 EvolveAI")
     st.caption("Private control room")
-    page = st.radio("Control panel", ["Circuit Board", "Engine Console", "Memory", "Learning Lab", "Diagnostics"])
+    page = st.radio("Control panel", ["Brain Maturity", "Circuit Board", "Engine Console", "Memory", "Learning Lab", "Diagnostics"])
     st.divider()
     st.caption("Backend")
     st.code(API_URL or "EVOLVEAI_API_URL not configured", language=None)
@@ -95,7 +102,12 @@ with st.sidebar:
 
 st.markdown('<div class="hero"><h1>Control room</h1><p class="muted">One engine. Shared memory. Administrative controls only.</p></div>', unsafe_allow_html=True)
 
-if page == "Circuit Board":
+if page == "Brain Maturity":
+    data = api("admin_overview")
+    if data:
+        render_maturity(data)
+
+elif page == "Circuit Board":
     data = api("admin_overview")
     if data:
         stats = data.get("stats", {})
@@ -105,6 +117,14 @@ if page == "Circuit Board":
         c.metric("Memories", stats.get("memories", 0))
         d.metric("Lessons", stats.get("lessons", 0))
         e.metric("Ghost knowledge", stats.get("ghost_knowledge", 0))
+        report = maturity_report(stats, data.get("storage", "unknown"))
+        st.markdown(
+            f'<div class="brain-panel"><div class="eyebrow">COGNITIVE READINESS</div>'
+            f'<h2>Brain maturity <span class="neon">{report["score"]}<small>/100</small></span></h2>'
+            f'<p class="muted">{report["label"]} · Based on implemented and measured subsystems, not simulated activity.</p></div>',
+            unsafe_allow_html=True,
+        )
+        st.progress(report["score"] / 100, text="Brain maturity index")
         st.subheader("Processing circuit")
         nodes = [
             ("01 · Input", "Message validation", "Ready"),
@@ -130,7 +150,7 @@ if page == "Circuit Board":
             st.info("No strategy feedback has been recorded yet.")
         if data.get("storage") == "sqlite_ephemeral":
             st.warning("Storage is currently SQLite on Vercel's ephemeral filesystem. Do not rely on this for persistent learning yet.")
-        st.caption("Stage status reflects the current code path, not a live per-request trace.")
+        st.caption("Circuit stages are architectural indicators, not live telemetry. Open Brain Maturity for measured gaps and the roadmap.")
 
 elif page == "Engine Console":
     st.subheader("Run a test prompt")
