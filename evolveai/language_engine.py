@@ -121,12 +121,15 @@ def realize_plan(plan: MessagePlan) -> str:
         text = " ".join(clauses)
         return _punctuate(text, "?")
 
-    if plan.tone == "warm" and plan.acknowledgement:
-        clauses.insert(0, _clean(plan.acknowledgement).rstrip(".!?"))
-
     if plan.detail == "brief":
         clauses = clauses[:2]
-    return _punctuate(" ".join(clauses))
+
+    if plan.tone == "warm" and plan.acknowledgement:
+        acknowledgement = _punctuate(plan.acknowledgement)
+        clauses = [acknowledgement] + [_punctuate(_capitalize(clause)) for clause in clauses]
+    else:
+        clauses = [_punctuate(_capitalize(clause)) for clause in clauses]
+    return " ".join(clauses)
 
 
 def identity_plan(name="EvolveAI", repeated=False):
