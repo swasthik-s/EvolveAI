@@ -5,6 +5,8 @@ a user repeats a question. It uses recent turn history, not random template rota
 """
 import re
 
+from .language_engine import generate_from_meaning, identity_plan, user_identity_plan
+
 
 def normalize_message(text):
     text = re.sub(r"\s+", " ", str(text or "").strip().lower())
@@ -37,25 +39,13 @@ def adapt_response(message, answer, history=None, intent="general"):
         return answer
 
     if intent == "assistant_identity":
-        if count == 1:
-            return (
-                "Still me—EvolveAI 😄. I’m the same assistant, but I can explain myself "
-                "from a different angle if you’re testing how I respond."
-            )
-        return (
-            "Checking whether I’ll change my story? 😄 I’m EvolveAI. My identity stays the "
-            "same; my explanation can change with the conversation."
-        )
+        plan = identity_plan(repeated=True)
+        return generate_from_meaning(plan) + (" 😄" if count == 1 else " I can explain the same idea another way.")
 
     if intent == "personal_context":
         name = _personal_name(answer)
-        if name:
-            if count == 1:
-                return f"Still you, {name} 😄 I haven’t lost track."
-            return f"Yep, {name}—you’re still you 😄. I remember; no need to reintroduce yourself."
-        if count == 1:
-            return "You’re the person I’m chatting with 😄. I still don’t have your name saved, so I won’t guess."
-        return "Same answer as before: you’re the person I’m chatting with. I’d need your name to identify you more specifically."
+        plan = user_identity_plan(name, repeated=True)
+        return generate_from_meaning(plan) + (" 😄" if count == 1 else "")
 
     # Keep facts and citations intact; acknowledge repetition instead of pretending
     # this is a new discovery.
