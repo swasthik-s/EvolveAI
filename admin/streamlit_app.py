@@ -157,7 +157,7 @@ require_login()
 with st.sidebar:
     st.markdown("## 🧠 EvolveAI")
     st.caption("Private control room")
-    page = st.radio("Control panel", ["Brain Maturity", "Circuit Board", "Engine Console", "Memory", "Learning Lab", "Diagnostics"])
+    page = st.radio("Control panel", ["Brain Activity", "Brain Maturity", "Circuit Board", "Engine Console", "Memory", "Learning Lab", "Diagnostics"])
     st.divider()
     st.caption("Backend")
     st.code(API_URL or "EVOLVEAI_API_URL not configured", language=None)
@@ -167,7 +167,36 @@ with st.sidebar:
 
 st.markdown('<div class="hero"><h1>Control room</h1><p class="muted">One engine. Shared memory. Administrative controls only.</p></div>', unsafe_allow_html=True)
 
-if page == "Brain Maturity":
+if page == "Brain Activity":
+    st.subheader("Brain activity journal")
+    st.caption("Inspect recorded agent actions and outcomes. This is observable telemetry, not a transcript of private internal thoughts.")
+    a, b, d = st.columns([1, 1, 2])
+    category = a.selectbox("Category", ["All", "user_task", "background_research", "learning", "memory", "experiment", "system"])
+    status = b.selectbox("Status", ["All", "started", "running", "completed", "failed", "waiting", "proposed", "rejected"])
+    query = d.text_input("Search events")
+    if st.button("Refresh events"):
+        st.rerun()
+    result = api("admin_activity", limit=200, category="" if category == "All" else category, status="" if status == "All" else status, query=query)
+    if result:
+        stats = result.get("activity_stats", {})
+        counts = stats.get("by_status", {})
+        cols = st.columns(4)
+        cols[0].metric("Events", stats.get("events", 0))
+        cols[1].metric("Running", counts.get("running", 0) + counts.get("started", 0))
+        cols[2].metric("Completed", counts.get("completed", 0))
+        cols[3].metric("Failed", counts.get("failed", 0))
+        events = result.get("events", [])
+        if events:
+            st.dataframe(pd.DataFrame([{"Time UTC": e.get("created_at"), "Category": e.get("category"), "Event": e.get("event"), "Status": e.get("status"), "Summary": e.get("summary"), "Task ID": e.get("task_id")} for e in events]), use_container_width=True, hide_index=True)
+            with st.expander("Inspect event details"):
+                options = {f'{e.get("created_at")} · {e.get("event")} · {e.get("id")}': e for e in events}
+                selected = st.selectbox("Recorded event", list(options))
+                st.json(options[selected])
+        else:
+            st.info("No events match these filters.")
+    st.warning("The always-on worker is not deployed yet. This journal records instrumented API activity and will also display background tasks once a worker is added.")
+
+elif page == "Brain Maturity":
     data = api("admin_overview")
     if data:
         render_maturity(data)
