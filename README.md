@@ -8,6 +8,20 @@ EvolveAI has two interfaces over the same Python agent:
 
 No hosted generative model API is required. EvolveAI is a bounded, instruction-driven prototype; web research and relevance ranking are heuristic.
 
+## Symbolic autonomy core (no LLM)
+
+The first model-free autonomy primitives live in `evolveai/autonomy.py`. This module provides:
+
+- Explicit goal definitions, success criteria, constraints, and execution budgets.
+- A registry of implemented actions with declared preconditions, effects, cost, risk, reversibility, and approval requirements.
+- A bounded symbolic planner that selects eligible actions based on goal progress, cost, and risk.
+- A fail-closed policy gate for risky or irreversible actions.
+- An observe-plan-act loop with retries, structured events, and goal verification.
+- JSON-serializable execution snapshots for persistence and admin inspection.
+
+This is a foundational baseline, not general intelligence or a complete STRIPS/HTN planner. It does not call an LLM, execute arbitrary generated code, or automatically grant new permissions. Application-specific actions must be registered explicitly. Run the autonomy tests with `pytest -q`.
+
+
 ## Deploy the user app on Vercel
 
 1. Import `swasthik-s/EvolveAI` at [Vercel](https://vercel.com/new).
