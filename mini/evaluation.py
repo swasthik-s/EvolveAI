@@ -1,7 +1,7 @@
 """Simple, honest evaluation for a character/byte-level language model."""
 import math
 import torch
-from .data import prepare_text, split_data, get_batch, encode, decode
+from data import prepare_text, split_data, get_batch, encode, decode
 
 @torch.no_grad()
 def evaluate_loss(model, text, batch_size=8, batches=20, device="cpu"):
