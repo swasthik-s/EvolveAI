@@ -22,6 +22,14 @@ The first model-free autonomy primitives live in `evolveai/autonomy.py`. This mo
 This is a foundational baseline, not general intelligence or a complete STRIPS/HTN planner. It does not call an LLM, execute arbitrary generated code, or automatically grant new permissions. Application-specific actions must be registered explicitly. Run the autonomy tests with `pytest -q`.
 
 
+## Autonomous research workflow (no LLM)
+
+The second milestone adds `evolveai/research_workflow.py`, connecting the symbolic controller to the existing public web search adapter. It collects source excerpts, retains URLs and titles, checks for at least two usable sources from distinct domains, creates a traceable report, and returns the execution trace.
+
+The distinct-domain check is only an evidence-coverage check. It does not prove that claims are true, independent, current, or authoritative. Search remains heuristic. This workflow is currently a callable module and is not exposed through the chat API or admin dashboard.
+
+Example: import `run_research` from `evolveai.research_workflow` and call `run_research("your research question")`. Automated tests inject fake search results and do not require network access. Run `pytest -q` to test the workflow and controller.
+
 ## Deploy the user app on Vercel
 
 1. Import `swasthik-s/EvolveAI` at [Vercel](https://vercel.com/new).
