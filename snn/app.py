@@ -70,6 +70,8 @@ if st.session_state.get("snn_corpus_manifest") and corpus_source == "fetched dat
         st.json(manifest)
         st.download_button("Download corpus manifest JSON", data=__import__("json").dumps(manifest, indent=2),
                            file_name="evolveai_corpus_manifest.json", mime="application/json")
+        st.download_button("Download fetched corpus TXT", data=corpus,
+                           file_name="evolveai_fetched_corpus.txt", mime="text/plain")
 if len(corpus.encode("utf-8")) < 100:
     st.error("Provide at least 100 bytes of training text.")
 else:
