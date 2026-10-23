@@ -12,6 +12,7 @@ _SUPERPOWER_QUESTIONS = {
     "what is your superpower", "whats your superpower", "what's your superpower",
     "what is your super power", "whats your super power", "what's your super power",
     "what would you say is your superpower", "what is your greatest strength",
+    "whats you superpower", "what is you superpower",
 }
 
 
@@ -42,7 +43,9 @@ _IDENTITY_QUESTIONS = {
 
 def answer_identity_question(message):
     normalized = re.sub(r"\s+", " ", str(message or "").strip().lower())
-    normalized = normalized.rstrip(" ?.!")
+    normalized = re.sub(r"[^a-z0-9]+$", "", normalized)
+    if normalized in _SUPERPOWER_QUESTIONS:
+        return _answer_superpower_question()
     if normalized not in _IDENTITY_QUESTIONS:
         return None
     return generate_from_meaning(identity_plan())
