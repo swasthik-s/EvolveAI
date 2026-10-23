@@ -4,6 +4,7 @@ import pandas as pd
 from train import train
 from data import decode
 from dataset_harvester import DATASETS, fetch_corpus
+from autonomous_lab import run_trials, export_json
 
 st.set_page_config(page_title="EvolveAI SNN Lab", page_icon="⚡", layout="wide")
 st.title("⚡ EvolveAI — Spiking Neural Network Lab")
@@ -64,6 +65,57 @@ else:
     corpus = DEFAULT_CORPUS
     corpus_source = "built-in toy corpus"
 st.write(f"Corpus size: **{len(corpus.encode('utf-8')):,} bytes** · source: {corpus_source}")
+
+st.subheader("Autonomous Experiment Lab")
+st.caption("Run a bounded trial-and-error search. It varies reviewed model settings, records failures, and ranks runs by validation loss.")
+auto_cols = st.columns(3)
+with auto_cols[0]:
+    auto_trials = st.slider("Experiment trials", min_value=1, max_value=6, value=3)
+with auto_cols[1]:
+    auto_steps = st.slider("Steps per trial", min_value=10, max_value=150, value=30, step=10)
+with auto_cols[2]:
+    auto_seed = st.number_input("Experiment seed", min_value=0, max_value=999999, value=42, key="auto_seed")
+if st.button("Start autonomous trial-and-error", type="primary"):
+    auto_bar = st.progress(0)
+    auto_status = st.empty()
+    def on_trial_progress(index, total, record):
+        auto_bar.progress(index / total)
+        if record["status"] == "completed":
+            auto_status.write(
+                f"Trial {index}/{total}: {record['architecture']} · hidden={record['hidden_size']} · "
+                f"lr={record['learning_rate']} · validation loss={record['validation_loss']:.3f}"
+            )
+        else:
+            auto_status.write(f"Trial {index}/{total} failed: {record.get('error', 'unknown error')}")
+    try:
+        with st.spinner("Running bounded experiments. Keep this Streamlit session open until the run finishes."):
+            auto_result = run_trials(
+                corpus, max_trials=int(auto_trials), steps=int(auto_steps),
+                block_size=min(int(block_size), 32), batch_size=int(batch_size),
+                seed=int(auto_seed), progress=on_trial_progress,
+            )
+        st.session_state["snn_autonomous_result"] = auto_result
+        st.success(f"Finished {auto_result['trials_completed']}/{auto_result['trials_requested']} trials in {auto_result['elapsed_seconds']:.1f}s.")
+    except Exception as exc:
+        st.error(f"Autonomous experiment failed: {exc}")
+
+auto_result = st.session_state.get("snn_autonomous_result")
+if auto_result:
+    st.markdown("#### Experiment leaderboard")
+    leaderboard = auto_result["leaderboard"]
+    if leaderboard:
+        st.dataframe(pd.DataFrame(leaderboard)[[
+            "trial", "architecture", "hidden_size", "learning_rate",
+            "validation_loss", "validation_perplexity", "elapsed_seconds"
+        ]], use_container_width=True, hide_index=True)
+        st.metric("Best validation loss", f"{auto_result['best_trial']['validation_loss']:.3f}")
+        st.caption("Lowest validation byte-level cross-entropy wins this screening round; this is not a reasoning score.")
+    else:
+        st.warning("No trials completed successfully.")
+    with st.expander("Full experiment log and limitations"):
+        st.json(auto_result)
+    st.download_button("Download experiment report JSON", data=export_json(auto_result),
+                       file_name="evolveai_autonomous_experiments.json", mime="application/json")
 if st.session_state.get("snn_corpus_manifest") and corpus_source == "fetched dataset":
     manifest = st.session_state["snn_corpus_manifest"]
     with st.expander("Dataset provenance and license metadata"):
