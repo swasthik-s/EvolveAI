@@ -10,7 +10,7 @@ from .language_engine import generate_from_meaning, identity_plan, user_identity
 
 def normalize_message(text):
     text = re.sub(r"\s+", " ", str(text or "").strip().lower())
-    return re.sub(r"[?.!]+$", "", text)
+    return re.sub(r"[^a-z0-9]+$", "", text)
 
 
 def repeated_question_count(message, history=None):
@@ -47,8 +47,6 @@ def adapt_response(message, answer, history=None, intent="general"):
         plan = user_identity_plan(name, repeated=True)
         return generate_from_meaning(plan) + (" 😄" if count == 1 else "")
 
-    # Keep facts and citations intact; acknowledge repetition instead of pretending
-    # this is a new discovery.
-    if count == 1:
-        return "I’ve answered this earlier in our chat, so I’ll keep the answer consistent:\n\n" + answer
-    return "We’ve come back to this a few times. I’ll keep the facts consistent rather than invent a new answer:\n\n" + answer
+    # Repetition alone is not a reason to add a canned disclaimer.
+    # Preserve the answer unless we have a meaningful, intent-specific adaptation.
+    return answer
