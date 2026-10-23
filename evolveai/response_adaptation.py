@@ -38,6 +38,13 @@ def adapt_response(message, answer, history=None, intent="general"):
     if count == 0:
         return answer
 
+    # Repeated greetings should acknowledge conversational context rather than
+    # replay the exact same opener. History excludes the current user turn.
+    greeting = normalize_message(message)
+    if greeting in {"hi", "hey", "hello", "good morning", "good afternoon", "good evening",
+                    "hi evolveai", "hello evolveai"}:
+        return "Hey again 😄 I'm here. What's on your mind?"
+
     if intent == "assistant_identity":
         plan = identity_plan(repeated=True)
         return generate_from_meaning(plan) + (" 😄" if count == 1 else " I can explain the same idea another way.")
