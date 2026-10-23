@@ -1,8 +1,8 @@
 """Training loop for EvolveAI Mini."""
 import random
 import torch
-from .data import prepare_text, split_data, get_batch, VOCAB_SIZE
-from .model import TinyGPT, ModelConfig
+from data import prepare_text, split_data, get_batch, VOCAB_SIZE
+from model import TinyGPT, ModelConfig
 
 def train_model(text, steps=300, batch_size=16, block_size=128, learning_rate=3e-4,
                 n_embd=128, n_head=4, n_layer=2, seed=42, progress=None):
