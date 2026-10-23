@@ -6,6 +6,7 @@ import time
 import torch
 import torch.nn.functional as F
 from model import RecurrentLIFLanguageModel
+from evolve_cell import EvolveContextSNNLanguageModel
 from data import encode, split_tokens, get_batch
 
 
@@ -23,14 +24,20 @@ def evaluate(model, tokens, block_size, batch_size=8, batches=8, device="cpu"):
 
 
 def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
-          embedding_dim=24, learning_rate=0.001, seed=42, progress=None):
+          embedding_dim=24, learning_rate=0.001, seed=42, progress=None,
+          architecture="baseline"):
     if steps < 1 or block_size < 4 or batch_size < 1:
         raise ValueError("steps/batch_size must be positive and block_size >= 4")
     random.seed(seed)
     torch.manual_seed(seed)
     tokens = encode(text)
     train_tokens, val_tokens = split_tokens(tokens)
-    model = RecurrentLIFLanguageModel(embedding_dim=embedding_dim, hidden_size=hidden_size)
+    if architecture == "evolve_context":
+        model = EvolveContextSNNLanguageModel(embedding_dim=embedding_dim, hidden_size=hidden_size)
+    elif architecture == "baseline":
+        model = RecurrentLIFLanguageModel(embedding_dim=embedding_dim, hidden_size=hidden_size)
+    else:
+        raise ValueError("architecture must be 'baseline' or 'evolve_context'")
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     history = []
     started = time.time()
@@ -52,4 +59,5 @@ def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
     return {"model": model, "history": history, "train_bytes": int(train_tokens.numel()),
             "validation_bytes": int(val_tokens.numel()), "elapsed_seconds": time.time() - started,
             "config": {"steps": steps, "block_size": block_size, "batch_size": batch_size,
-                       "hidden_size": hidden_size, "embedding_dim": embedding_dim}}
+                       "hidden_size": hidden_size, "embedding_dim": embedding_dim,
+                       "architecture": architecture}}
