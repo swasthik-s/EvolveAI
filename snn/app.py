@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from train import train
 from data import decode
+from dataset_harvester import DATASETS, fetch_corpus
 
 st.set_page_config(page_title="EvolveAI SNN Lab", page_icon="⚡", layout="wide")
 st.title("⚡ EvolveAI — Spiking Neural Network Lab")
@@ -24,9 +25,51 @@ with st.sidebar:
         format_func=lambda value: "EvolveAI Context SNN (experimental)" if value == "evolve_context" else "Simple recurrent LIF baseline",
     )
 
-uploaded = st.file_uploader("Optional UTF-8 .txt training corpus", type=["txt"])
-corpus = uploaded.getvalue().decode("utf-8", errors="replace") if uploaded else DEFAULT_CORPUS
-st.write(f"Corpus size: **{len(corpus.encode('utf-8')):,} bytes** · source: {'uploaded file' if uploaded else 'built-in toy corpus'}")
+st.subheader("Dataset acquisition")
+st.caption("The SNN can fetch a reviewed dataset itself, within a strict size limit. It does not crawl arbitrary websites.")
+dataset_label = st.selectbox("Approved dataset", options=list(DATASETS.keys()))
+dataset_cap_mb = st.slider("Maximum dataset text to retain (MiB)", min_value=1, max_value=20, value=5)
+max_rows = st.number_input("Maximum records (0 = stop at size cap)", min_value=0, max_value=100000, value=0, step=1000)
+spec = DATASETS[dataset_label]
+st.markdown(f"**Source:** [{spec['id']}]({spec['url']})  \n**License:** {spec['license']}  \n**Use note:** {spec['commercial_use']}")
+st.warning("Review the source's current license before use. Fetching data does not mean it is cleared for commercial use.")
+if st.button("Fetch approved dataset", type="secondary"):
+    fetch_status = st.empty()
+    fetch_bar = st.progress(0)
+    def on_fetch_progress(records, byte_count, rows_seen):
+        fetch_status.write(f"Read {rows_seen:,} rows · retained {records:,} records · {byte_count / (1024 * 1024):.2f} MiB")
+        fetch_bar.progress(min(0.99, byte_count / (dataset_cap_mb * 1024 * 1024)))
+    try:
+        with st.spinner("Streaming approved dataset, cleaning text, and deduplicating…"):
+            fetched_text, manifest = fetch_corpus(
+                dataset_label, max_mb=float(dataset_cap_mb), max_rows=int(max_rows),
+                progress=on_fetch_progress
+            )
+        st.session_state["snn_corpus"] = fetched_text
+        st.session_state["snn_corpus_manifest"] = manifest
+        st.session_state.pop("snn_result", None)
+        fetch_bar.progress(1.0)
+        st.success(f"Fetched {manifest['records_kept']:,} records ({manifest['corpus_bytes']:,} bytes).")
+    except Exception as exc:
+        st.error(f"Dataset fetch failed: {exc}")
+
+uploaded = st.file_uploader("Or upload a UTF-8 .txt training corpus", type=["txt"])
+if uploaded:
+    corpus = uploaded.getvalue().decode("utf-8", errors="replace")
+    corpus_source = f"uploaded file: {uploaded.name}"
+elif st.session_state.get("snn_corpus"):
+    corpus = st.session_state["snn_corpus"]
+    corpus_source = "fetched dataset"
+else:
+    corpus = DEFAULT_CORPUS
+    corpus_source = "built-in toy corpus"
+st.write(f"Corpus size: **{len(corpus.encode('utf-8')):,} bytes** · source: {corpus_source}")
+if st.session_state.get("snn_corpus_manifest") and corpus_source == "fetched dataset":
+    manifest = st.session_state["snn_corpus_manifest"]
+    with st.expander("Dataset provenance and license metadata"):
+        st.json(manifest)
+        st.download_button("Download corpus manifest JSON", data=__import__("json").dumps(manifest, indent=2),
+                           file_name="evolveai_corpus_manifest.json", mime="application/json")
 if len(corpus.encode("utf-8")) < 100:
     st.error("Provide at least 100 bytes of training text.")
 else:
