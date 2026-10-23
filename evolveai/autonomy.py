@@ -72,6 +72,7 @@ class TraceEvent:
 class GoalState:
     goal: Goal
     facts: set[str] = field(default_factory=set)
+    artifacts: dict[str, Any] = field(default_factory=dict)
     completed_actions: list[str] = field(default_factory=list)
     failed_actions: dict[str, int] = field(default_factory=dict)
     events: list[TraceEvent] = field(default_factory=list)
@@ -242,8 +243,11 @@ class AutonomousEngine:
             state.total_cost += max(0.0, result.cost)
             if result.success:
                 state.completed_actions.append(selected.name)
+                # Only observations returned by the executor become facts. Declared effects
+                # are planning metadata, not proof that an effect actually occurred.
                 state.facts.update(result.observations)
-                state.facts.update(selected.effects)
+                if result.output is not None:
+                    state.artifacts[selected.name] = result.output
                 state.last_error = ""
                 self._record(state, "action_succeeded", selected.name,
                              observations=result.observations, evidence=result.evidence)
@@ -266,6 +270,7 @@ def state_to_dict(state: GoalState) -> dict[str, Any]:
     payload = {
         "goal": asdict(state.goal),
         "facts": sorted(state.facts),
+        "artifacts": state.artifacts,
         "completed_actions": list(state.completed_actions),
         "failed_actions": dict(state.failed_actions),
         "status": state.status.value,
