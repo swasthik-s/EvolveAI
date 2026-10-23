@@ -44,6 +44,8 @@ _IDENTITY_QUESTIONS = {
 def answer_identity_question(message):
     normalized = re.sub(r"\s+", " ", str(message or "").strip().lower())
     normalized = re.sub(r"[^a-z0-9]+$", "", normalized)
+    if normalized in _SUPERPOWER_QUESTIONS:
+        return _answer_superpower_question()
     if normalized not in _IDENTITY_QUESTIONS:
         return None
     return generate_from_meaning(identity_plan())
