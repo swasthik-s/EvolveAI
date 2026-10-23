@@ -80,7 +80,7 @@ with chat_tab:
             st.session_state.history.append({"role":"user","content":prompt})
             with st.chat_message("user"): st.markdown(prompt)
             try:
-                output = complete(st.session_state.model, prompt, max_new_tokens=160, temperature=0.8, device="cpu")
+                output = complete(st.session_state.model, "User: " + prompt + "\nAssistant:", max_new_tokens=160, temperature=0.8, device="cpu")
                 # This baseline is a next-token completer, not instruction-tuned; prompt output may be incoherent.
                 with st.chat_message("assistant"): st.markdown(output)
                 st.session_state.history.append({"role":"assistant","content":output})
