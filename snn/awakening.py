@@ -26,7 +26,7 @@ class AwakeningAgent:
         # Isolate initialization from PyTorch's process-global RNG so creating an
         # agent cannot silently change randomness in the host app or other models.
         with torch.random.fork_rng(devices=[]):
-            torch.manual_seed(self.seed)
+            torch.random.default_generator.manual_seed(self.seed)
             self.cell = EvolveSpikingContextCell(
                 input_size=7, hidden_size=32, threshold=0.45,
                 leak_fast=0.55, leak_slow=0.90, adaptation_rate=0.01,
