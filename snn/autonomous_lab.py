@@ -21,30 +21,52 @@ class TrialConfig:
     seed: int
 
 
-def propose_trials(max_trials: int = 4, seed: int = 42) -> list[TrialConfig]:
-    """Small, deterministic search over a reviewed configuration space."""
-    candidates = [
-        TrialConfig("evolve_context", 64, 0.001, seed),
-        TrialConfig("baseline", 64, 0.001, seed),
-        TrialConfig("evolve_context", 32, 0.001, seed),
-        TrialConfig("evolve_context", 64, 0.0005, seed),
-        TrialConfig("baseline", 32, 0.001, seed),
-        TrialConfig("baseline", 64, 0.0005, seed),
-    ]
-    return candidates[:max(1, min(int(max_trials), len(candidates)))]
-
+def propose_trials(max_trials: int = 4, seed: int = 42,
+                   previous_best: dict | None = None) -> list[TrialConfig]:
+    """Propose a reviewed initial search or a neighborhood around prior success."""
+    if previous_best:
+        architecture = previous_best.get("architecture", "evolve_context")
+        hidden_size = int(previous_best.get("hidden_size", 64))
+        learning_rate = float(previous_best.get("learning_rate", 0.001))
+        alternate = "baseline" if architecture == "evolve_context" else "evolve_context"
+        candidates = [
+            TrialConfig(architecture, hidden_size, learning_rate, seed),
+            TrialConfig(architecture, 32 if hidden_size >= 64 else 64, learning_rate, seed),
+            TrialConfig(architecture, hidden_size, max(0.0001, learning_rate * 0.5), seed),
+            TrialConfig(architecture, hidden_size, min(0.005, learning_rate * 2.0), seed),
+            TrialConfig(alternate, hidden_size, learning_rate, seed),
+            TrialConfig(alternate, 32 if hidden_size >= 64 else 64, learning_rate, seed),
+        ]
+    else:
+        candidates = [
+            TrialConfig("evolve_context", 64, 0.001, seed),
+            TrialConfig("baseline", 64, 0.001, seed),
+            TrialConfig("evolve_context", 32, 0.001, seed),
+            TrialConfig("evolve_context", 64, 0.0005, seed),
+            TrialConfig("baseline", 32, 0.001, seed),
+            TrialConfig("baseline", 64, 0.0005, seed),
+        ]
+    unique = []
+    seen = set()
+    for candidate in candidates:
+        key = (candidate.architecture, candidate.hidden_size, candidate.learning_rate)
+        if key not in seen:
+            unique.append(candidate)
+            seen.add(key)
+    return unique[:max(1, min(int(max_trials), len(unique)))]
 
 def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
                block_size: int = 32, batch_size: int = 4, seed: int = 42,
                progress=None, device: str = "auto",
-               checkpoint_path: str | None = None) -> dict:
+               checkpoint_path: str | None = None,
+               previous_best: dict | None = None) -> dict:
     if len(corpus.encode("utf-8")) < 100:
         raise ValueError("Corpus must contain at least 100 UTF-8 bytes.")
     if not 1 <= steps <= 300:
         raise ValueError("steps must be between 1 and 300.")
     if not 1 <= max_trials <= 6:
         raise ValueError("max_trials must be between 1 and 6.")
-    configs = propose_trials(max_trials, seed)
+    configs = propose_trials(max_trials, seed, previous_best)
     records = []
     best_loss = float("inf")
     started = time.time()
@@ -98,6 +120,8 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
     return {
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "objective": "minimize final validation byte-level cross-entropy",
+        "search_strategy": "adaptive neighborhood around historical best" if previous_best else "initial reviewed configuration search",
+        "previous_best_validation_loss": previous_best.get("validation_loss") if previous_best else None,
         "corpus_bytes": len(corpus.encode("utf-8")),
         "device_requested": device,
         "device_used": next((r.get("device") for r in completed), None),
