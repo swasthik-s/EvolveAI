@@ -35,7 +35,7 @@ def evaluate(model, tokens, block_size, batch_size=8, batches=8, device="cpu"):
 
 def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
           embedding_dim=24, learning_rate=0.001, seed=42, progress=None,
-          architecture="baseline", device="auto"):
+          architecture="baseline", device="auto", initial_state_dict=None):
     if steps < 1 or block_size < 4 or batch_size < 1:
         raise ValueError("steps/batch_size must be positive and block_size >= 4")
     device = resolve_device(device)
@@ -52,6 +52,8 @@ def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
     else:
         raise ValueError("architecture must be 'baseline' or 'evolve_context'")
     model = model.to(device)
+    if initial_state_dict is not None:
+        model.load_state_dict(initial_state_dict, strict=True)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     history = []
     started = time.time()
