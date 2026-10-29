@@ -101,8 +101,9 @@ class AwakeningAgent:
             self.adaptation = torch.nan_to_num(adaptation, nan=0.0, posinf=1.0, neginf=0.0).clamp(0, 1)
             self.previous_spikes = torch.nan_to_num(spikes, nan=0.0).clamp(0, 1)
             scores = self.readout(self.previous_spikes)
+            greedy_prediction = int(scores.argmax(dim=1).item())
             explore = self.rng.random() < 0.08
-            action = self.rng.randint(0, 1) if explore else int(scores.argmax(dim=1).item())
+            action = self.rng.randint(0, 1) if explore else greedy_prediction
 
         predicted = action
         correct = predicted == target
@@ -133,6 +134,9 @@ class AwakeningAgent:
             "input_b": b,
             "action": action_name,
             "prediction": predicted,
+            "greedy_prediction": greedy_prediction,
+            "explored": bool(explore),
+            "greedy_correct": greedy_prediction == target,
             "target": target,
             "correct": correct,
             "reward": reward,
