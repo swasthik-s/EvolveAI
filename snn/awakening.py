@@ -73,10 +73,15 @@ class AwakeningAgent:
         self.adaptation.zero_()
         self.fault_count += 1
 
-    def step(self) -> dict[str, Any]:
+    def step(self, input_pair: tuple[int, int] | None = None, learn: bool = True, explore: bool = True) -> dict[str, Any]:
         # Balanced, independently sampled input pairs avoid a constant target.
-        a = self.rng.randint(0, 1)
-        b = self.rng.randint(0, 1)
+        if input_pair is None:
+            a = self.rng.randint(0, 1)
+            b = self.rng.randint(0, 1)
+        else:
+            a, b = int(input_pair[0]), int(input_pair[1])
+            if a not in (0, 1) or b not in (0, 1):
+                raise ValueError("input_pair values must be 0 or 1")
         target = a ^ b
         obs = self._observation(a, b)
         x = torch.tensor([obs], dtype=torch.float32)
@@ -102,8 +107,8 @@ class AwakeningAgent:
             self.previous_spikes = torch.nan_to_num(spikes, nan=0.0).clamp(0, 1)
             scores = self.readout(self.previous_spikes)
             greedy_prediction = int(scores.argmax(dim=1).item())
-            explore = self.rng.random() < 0.08
-            action = self.rng.randint(0, 1) if explore else greedy_prediction
+            explored = bool(explore and self.rng.random() < 0.08)
+            action = self.rng.randint(0, 1) if explored else greedy_prediction
 
         predicted = action
         correct = predicted == target
@@ -112,14 +117,15 @@ class AwakeningAgent:
 
         # Prediction-error update: reinforce correct output and suppress the
         # incorrect output. This is an online readout rule, not SNN self-discovery.
-        with torch.no_grad():
-            target_distribution = torch.zeros_like(scores[0])
-            target_distribution[target] = 1.0
-            delta = self.learning_rate * (target_distribution - torch.softmax(scores[0], dim=0))
-            self.readout.weight.add_(delta[:, None] * self.previous_spikes)
-            self.readout.bias.add_(delta)
-            self.readout.weight.clamp_(-1.0, 1.0)
-            self.readout.bias.clamp_(-1.0, 1.0)
+        if learn:
+            with torch.no_grad():
+                target_distribution = torch.zeros_like(scores[0])
+                target_distribution[target] = 1.0
+                delta = self.learning_rate * (target_distribution - torch.softmax(scores[0], dim=0))
+                self.readout.weight.add_(delta[:, None] * self.previous_spikes)
+                self.readout.bias.add_(delta)
+                self.readout.weight.clamp_(-1.0, 1.0)
+                self.readout.bias.clamp_(-1.0, 1.0)
 
         self.step_count += 1
         self.last_observation = obs
@@ -135,7 +141,7 @@ class AwakeningAgent:
             "action": action_name,
             "prediction": predicted,
             "greedy_prediction": greedy_prediction,
-            "explored": bool(explore),
+            "explored": bool(explored),
             "greedy_correct": greedy_prediction == target,
             "target": target,
             "correct": correct,
