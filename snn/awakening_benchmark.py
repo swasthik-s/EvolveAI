@@ -598,7 +598,11 @@ def run_benchmark(
             summary[name]["mean_train_greedy_accuracy"] = round(
                 statistics.mean(r["train_greedy_accuracy"] for r in rows), 4
             )
-        if name == "online_end_to_end_bptt_snn":
+        if name in (
+            "online_end_to_end_bptt_snn",
+            "online_end_to_end_bptt_parity3_snn",
+            "online_end_to_end_bptt_parity4_snn",
+        ):
             summary[name]["mean_online_training_accuracy"] = round(
                 statistics.mean(r["mean_online_training_accuracy"] for r in rows), 4
             )
