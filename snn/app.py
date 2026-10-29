@@ -7,10 +7,12 @@ from dataset_harvester import DATASETS, fetch_corpus
 from autonomous_lab import run_trials, export_json
 from awakening import AwakeningAgent, export_state_json
 import json
+import torch
 
 st.set_page_config(page_title="EvolveAI SNN Lab", page_icon="⚡", layout="wide")
 st.title("⚡ EvolveAI — Spiking Neural Network Lab")
 st.caption("Custom dual-timescale adaptive-threshold SNN · byte-level prediction · no Transformer or attention")
+st.info("For NVIDIA T4 GPU experiments, open the [EvolveAI Colab notebook](https://colab.research.google.com/github/swasthik-s/EvolveAI/blob/main/snn/EvolveAI_T4_Autonomous_Learning.ipynb). This Streamlit host uses: " + ("CUDA GPU" if torch.cuda.is_available() else "CPU") + ".")
 st.warning("Research prototype only. A lower validation loss is evidence of pattern learning, not proof of reasoning or human-like intelligence.")
 
 DEFAULT_CORPUS = ("""User: Hello.\nAssistant: Hello! What would you like to explore today?\n\nUser: What is learning?\nAssistant: Learning means using experience to improve future predictions or actions.\n\nUser: I made a mistake.\nAssistant: Let's inspect what happened, identify the cause, and try a better approach.\n\nUser: What is a neuron?\nAssistant: A neuron receives signals, integrates them, and may send an electrical spike to other neurons.\n\nUser: Why do predictions fail?\nAssistant: A prediction can fail when evidence differs from expectations. The error can help update the model.\n\nUser: Can you remember a fact?\nAssistant: A learning system can store useful information and retrieve it when relevant.\n\nUser: What should we test?\nAssistant: We should measure held-out loss, sample quality, repeatability, and whether feedback improves performance.\n\n""" * 8)
