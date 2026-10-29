@@ -67,3 +67,17 @@ def test_awakening_state_can_be_exported_and_resumed():
 def test_old_state_version_is_rejected_clearly():
     with pytest.raises(ValueError, match="version-3"):
         AwakeningAgent(seed=1, state={"state_version": 2})
+
+
+def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
+    from awakening_benchmark import run_benchmark
+
+    result = run_benchmark(seeds=[1], train_steps=16, eval_repeats_per_pair=2)
+    assert result["evaluation_trials_per_run"] == 8
+    assert set(result["summary"]) == {
+        "online_readout_update",
+        "frozen_readout_control",
+        "nonlinear_mlp_sanity_baseline",
+    }
+    assert all(row["evaluation_trials"] == 8 for row in result["runs"])
+    assert all(row["all_states_finite"] for row in result["runs"])
