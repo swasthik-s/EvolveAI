@@ -78,8 +78,11 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
         "online_readout_update",
         "frozen_readout_control",
         "nonlinear_mlp_sanity_baseline",
+        "end_to_end_trainable_snn",
     }
     assert all(row["evaluation_trials"] == 8 for row in result["runs"])
     assert all(row["all_states_finite"] for row in result["runs"])
+    end_to_end = next(row for row in result["runs"] if row["condition"] == "end_to_end_trainable_snn")
+    assert end_to_end["evaluation_trials"] == 8
     mlp = next(row for row in result["runs"] if row["condition"] == "nonlinear_mlp_sanity_baseline")
     assert mlp["heldout_greedy_accuracy"] >= 0.99
