@@ -32,6 +32,7 @@ if str(SNN_DIR) not in sys.path:
     sys.path.insert(0, str(SNN_DIR))
 
 from awakening import AwakeningAgent
+from evolve_cell import EvolveSpikingContextCell
 
 
 PAIRS = ((0, 0), (0, 1), (1, 0), (1, 1))
@@ -187,6 +188,103 @@ def run_mlp_baseline(seed: int, train_steps: int, eval_repeats_per_pair: int) ->
             }
 
 
+
+
+class TrainableXORSNN(nn.Module):
+    """End-to-end trainable version of the experimental spiking cell for XOR.
+
+    Unlike AwakeningAgent's online rule, this diagnostic baseline updates the
+    cell and readout with surrogate-gradient backpropagation. Each input is a
+    single-step episode, so evaluation after state reset tests whether learned
+    parameters encode the XOR mapping rather than relying on carry-over state.
+    """
+    def __init__(self):
+        super().__init__()
+        self.cell = EvolveSpikingContextCell(
+            input_size=7, hidden_size=32, threshold=0.45,
+            leak_fast=0.55, leak_slow=0.90, adaptation_rate=0.01,
+        )
+        self.readout = nn.Linear(32, 2)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        batch = x.shape[0]
+        fast = x.new_zeros(batch, 32)
+        slow = x.new_zeros(batch, 32)
+        previous = x.new_zeros(batch, 32)
+        adaptation = x.new_zeros(batch, 32)
+        spikes, _, _, _ = self.cell(x, fast, slow, previous, adaptation)
+        return self.readout(spikes), spikes
+
+
+def run_end_to_end_snn_baseline(
+    seed: int, train_steps: int, eval_repeats_per_pair: int
+) -> dict[str, Any]:
+    """Train both cell and readout, then evaluate every pair from zero state."""
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(seed + 90_000)
+        model = TrainableXORSNN()
+        # Small recurrent/context projections reduce initial instability.
+        with torch.no_grad():
+            model.cell.recurrent_current.weight.mul_(0.25)
+            model.cell.slow_context.weight.mul_(0.10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
+        x_train = torch.tensor(
+            [observation(a, b) for a, b in PAIRS], dtype=torch.float32
+        )
+        y_train = torch.tensor([a ^ b for a, b in PAIRS], dtype=torch.long)
+        epochs = max(300, train_steps // 2)
+        losses = []
+        model.train()
+        for _ in range(epochs):
+            optimizer.zero_grad()
+            logits, _ = model(x_train)
+            loss = nn.functional.cross_entropy(logits, y_train)
+            if not torch.isfinite(loss):
+                break
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            losses.append(float(loss.detach().item()))
+
+        model.eval()
+        eval_pairs = [
+            (a, b)
+            for a, b in PAIRS
+            for _ in range(eval_repeats_per_pair)
+        ]
+        random.Random(300_000 + seed).shuffle(eval_pairs)
+        with torch.no_grad():
+            x_eval = torch.tensor(
+                [observation(a, b) for a, b in eval_pairs], dtype=torch.float32
+            )
+            y_eval = torch.tensor([a ^ b for a, b in eval_pairs], dtype=torch.long)
+            logits, spikes = model(x_eval)
+            predictions = logits.argmax(dim=1)
+            per_pair = {}
+            for a, b in PAIRS:
+                idx = [i for i, pair in enumerate(eval_pairs) if pair == (a, b)]
+                per_pair[f"{a}{b}"] = round(
+                    float((predictions[idx] == y_eval[idx]).float().mean().item()), 4
+                )
+            return {
+                "seed": seed,
+                "condition": "end_to_end_trainable_snn",
+                "train_steps": train_steps,
+                "training_epochs": epochs,
+                "final_training_loss": round(losses[-1], 6) if losses else None,
+                "evaluation_trials": len(eval_pairs),
+                "heldout_greedy_accuracy": round(
+                    float((predictions == y_eval).float().mean().item()), 4
+                ),
+                "heldout_accuracy_by_input_pair": per_pair,
+                "mean_eval_spikes_per_step": round(float(spikes.sum(dim=1).mean().item()), 4),
+                "all_states_finite": bool(
+                    torch.isfinite(logits).all().item()
+                    and all(torch.isfinite(p).all().item() for p in model.parameters())
+                ),
+            }
+
+
 def run_benchmark(
     seeds: list[int] | None = None,
     train_steps: int = 1500,
@@ -198,10 +296,12 @@ def run_benchmark(
         results.append(run_snn_condition(seed, train_steps, eval_repeats_per_pair, True))
         results.append(run_snn_condition(seed, train_steps, eval_repeats_per_pair, False))
         results.append(run_mlp_baseline(seed, train_steps, eval_repeats_per_pair))
+        results.append(run_end_to_end_snn_baseline(seed, train_steps, eval_repeats_per_pair))
 
     online = {r["seed"]: r for r in results if r["condition"] == "online_readout_update"}
     frozen = {r["seed"]: r for r in results if r["condition"] == "frozen_readout_control"}
     mlp = {r["seed"]: r for r in results if r["condition"] == "nonlinear_mlp_sanity_baseline"}
+    end_to_end = {r["seed"]: r for r in results if r["condition"] == "end_to_end_trainable_snn"}
     paired = [online[s]["heldout_greedy_accuracy"] - frozen[s]["heldout_greedy_accuracy"] for s in seeds]
 
     summary = {}
@@ -209,6 +309,7 @@ def run_benchmark(
         ("online_readout_update", online),
         ("frozen_readout_control", frozen),
         ("nonlinear_mlp_sanity_baseline", mlp),
+        ("end_to_end_trainable_snn", end_to_end),
     ):
         rows = list(by_seed.values())
         summary[name] = {
@@ -222,7 +323,7 @@ def run_benchmark(
             "finite_runs": sum(bool(r["all_states_finite"]) for r in rows),
             "runs": len(rows),
         }
-        if name != "nonlinear_mlp_sanity_baseline":
+        if name in ("online_readout_update", "frozen_readout_control"):
             summary[name]["mean_train_greedy_accuracy"] = round(
                 statistics.mean(r["train_greedy_accuracy"] for r in rows), 4
             )
@@ -231,7 +332,7 @@ def run_benchmark(
         "experiment": "awakening_reset_state_generalization_xor_v2",
         "training": (
             "random online XOR stream for SNN; target withheld from stationary input features; "
-            "nonlinear MLP trained on the complete four-example XOR truth table as a positive control"
+            "nonlinear MLP positive control and end-to-end trainable SNN control trained on the complete XOR truth table"
         ),
         "evaluation": (
             "balanced shuffled XOR pairs; SNN learning/exploration disabled; transient recurrent "
@@ -244,7 +345,7 @@ def run_benchmark(
         "summary": summary,
         "paired_snn_heldout_greedy_accuracy_difference": mean_ci(paired),
         "interpretation_guidance": (
-            "The MLP is a positive-control sanity baseline trained on all four XOR input pairs, not an equivalent SNN comparison. "
+            "The MLP is a positive-control sanity baseline; the end-to-end SNN updates cell and readout with surrogate-gradient BPTT. "
             "If the MLP cannot learn XOR, inspect the benchmark pipeline. If MLP succeeds but the "
             "SNN fails, the SNN's fixed random representation/readout learning is the likely "
             "bottleneck. Paired SNN confidence intervals use a normal approximation. Results do "
