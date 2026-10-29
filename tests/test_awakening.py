@@ -73,7 +73,11 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
     from awakening_benchmark import run_benchmark
 
     result = run_benchmark(seeds=[1], train_steps=16, eval_repeats_per_pair=2)
-    assert result["evaluation_trials_per_run"] == 8
+    assert result["evaluation_trials_per_condition"] == {
+        "xor_conditions": 8,
+        "parity3": 16,
+        "parity4": 32,
+    }
     assert set(result["summary"]) == {
         "online_readout_update",
         "frozen_readout_control",
@@ -81,8 +85,16 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
         "end_to_end_trainable_snn",
         "online_end_to_end_bptt_snn",
         "online_end_to_end_bptt_parity3_snn",
+        "online_end_to_end_bptt_parity4_snn",
     }
-    assert all(row["evaluation_trials"] == (16 if row["condition"] == "online_end_to_end_bptt_parity3_snn" else 8) for row in result["runs"])
+    assert all(
+        row["evaluation_trials"] == (
+            32 if row["condition"] == "online_end_to_end_bptt_parity4_snn"
+            else 16 if row["condition"] == "online_end_to_end_bptt_parity3_snn"
+            else 8
+        )
+        for row in result["runs"]
+    )
     assert all(row["all_states_finite"] for row in result["runs"])
     end_to_end = next(row for row in result["runs"] if row["condition"] == "end_to_end_trainable_snn")
     assert end_to_end["evaluation_trials"] == 8
@@ -95,5 +107,10 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
     assert len(parity3["heldout_accuracy_by_input_pattern"]) == 8
     assert parity3["updates_completed"] <= 16
     assert isinstance(parity3["training_stable"], bool)
+    parity4 = next(row for row in result["runs"] if row["condition"] == "online_end_to_end_bptt_parity4_snn")
+    assert parity4["evaluation_trials"] == 32
+    assert len(parity4["heldout_accuracy_by_input_pattern"]) == 16
+    assert parity4["updates_completed"] <= 16
+    assert isinstance(parity4["training_stable"], bool)
     mlp = next(row for row in result["runs"] if row["condition"] == "nonlinear_mlp_sanity_baseline")
     assert mlp["heldout_greedy_accuracy"] >= 0.99
