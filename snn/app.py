@@ -5,6 +5,8 @@ from train import train
 from data import decode
 from dataset_harvester import DATASETS, fetch_corpus
 from autonomous_lab import run_trials, export_json
+from awakening import AwakeningAgent, export_state_json
+import json
 
 st.set_page_config(page_title="EvolveAI SNN Lab", page_icon="⚡", layout="wide")
 st.title("⚡ EvolveAI — Spiking Neural Network Lab")
@@ -65,6 +67,68 @@ else:
     corpus = DEFAULT_CORPUS
     corpus_source = "built-in toy corpus"
 st.write(f"Corpus size: **{len(corpus.encode('utf-8')):,} bytes** · source: {corpus_source}")
+
+
+st.subheader("🌱 Awakening Environment")
+st.caption("A controlled toy world for testing continuous SNN activity, exploration, online adaptation, and resumable developmental history.")
+st.warning("Research simulation only, not evidence of consciousness. This first environment tests a small XOR rule-discovery task; English comprehension and autonomous internet learning are not implemented here.")
+
+if "awakening_agent" not in st.session_state:
+    st.session_state["awakening_agent"] = AwakeningAgent(seed=42)
+
+awakening_agent = st.session_state["awakening_agent"]
+aw_cols = st.columns([1, 1, 1, 2])
+with aw_cols[0]:
+    aw_steps = st.select_slider("Experience steps", options=[1, 5, 10, 25, 50], value=10)
+with aw_cols[1]:
+    if st.button("Run experiences", type="primary", key="aw_run"):
+        try:
+            awakening_agent.run(int(aw_steps))
+            st.session_state["awakening_agent"] = awakening_agent
+            st.session_state["awakening_notice"] = f"Processed {aw_steps} new experiences."
+        except Exception as exc:
+            st.error(f"Awakening step failed: {exc}")
+with aw_cols[2]:
+    if st.button("Reset agent", key="aw_reset"):
+        st.session_state["awakening_agent"] = AwakeningAgent(seed=42)
+        st.session_state.pop("awakening_notice", None)
+        st.rerun()
+with aw_cols[3]:
+    state_upload = st.file_uploader("Resume from exported state JSON", type=["json"], key="aw_state_upload")
+    if state_upload is not None and st.button("Load saved state", key="aw_load"):
+        try:
+            loaded_state = json.loads(state_upload.getvalue().decode("utf-8"))
+            st.session_state["awakening_agent"] = AwakeningAgent(seed=int(loaded_state.get("seed", 42)), state=loaded_state)
+            st.session_state["awakening_notice"] = "Loaded saved developmental state."
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Could not load state: {exc}")
+
+if st.session_state.get("awakening_notice"):
+    st.info(st.session_state["awakening_notice"])
+
+awakening_agent = st.session_state["awakening_agent"]
+aw_summary = awakening_agent.summary()
+aw_metrics = st.columns(4)
+aw_metrics[0].metric("Experience steps", aw_summary["step_count"])
+aw_metrics[1].metric("Recent prediction accuracy", "—" if aw_summary["recent_prediction_accuracy"] is None else f"{aw_summary['recent_prediction_accuracy']:.1%}")
+aw_metrics[2].metric("Total reward", f"{aw_summary['total_reward']:.2f}")
+aw_metrics[3].metric("Spikes in last step", aw_summary["spike_count_last_step"])
+st.caption(aw_summary["note"])
+if awakening_agent.history:
+    aw_history_df = pd.DataFrame(awakening_agent.history)
+    st.line_chart(aw_history_df.set_index("step")[["reward", "surprise"]])
+    st.dataframe(aw_history_df.tail(20), use_container_width=True, hide_index=True)
+else:
+    st.info("The agent has not experienced the environment yet. Run a few steps to begin.")
+st.download_button(
+    "Export developmental state (JSON)",
+    data=export_state_json(awakening_agent),
+    file_name="evolveai_awakening_state.json",
+    mime="application/json",
+    key="aw_export",
+)
+st.caption("State remains in the current Streamlit session. Download the JSON and load it again after a session reset; cloud session memory is not guaranteed to persist.")
 
 st.subheader("Autonomous Experiment Lab")
 st.caption("Run a bounded trial-and-error search. It varies reviewed model settings, records failures, and ranks runs by validation loss.")
