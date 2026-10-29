@@ -149,7 +149,7 @@ def run_mlp_baseline(seed: int, train_steps: int, eval_repeats_per_pair: int) ->
             [observation(a, b) for a, b in train_pairs], dtype=torch.float32
         )
         y_train = torch.tensor([a ^ b for a, b in train_pairs], dtype=torch.long)
-        epochs = max(100, train_steps // 4)
+        epochs = max(300, train_steps // 4)
         model.train()
         for _ in range(epochs):
             optimizer.zero_grad()
@@ -285,6 +285,76 @@ def run_end_to_end_snn_baseline(
             }
 
 
+
+def run_online_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pair: int) -> dict[str, Any]:
+    """Update cell and readout after each labeled random XOR example."""
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(seed + 120_000)
+        model = TrainableXORSNN()
+        with torch.no_grad():
+            model.cell.recurrent_current.weight.mul_(0.25)
+            model.cell.slow_context.weight.mul_(0.10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
+        rng = random.Random(400_000 + seed)
+        correct = 0
+        losses = []
+        updates_completed = 0
+        training_stable = True
+        model.train()
+        for _ in range(train_steps):
+            a, b = rng.randint(0, 1), rng.randint(0, 1)
+            x = torch.tensor([observation(a, b)], dtype=torch.float32)
+            target = torch.tensor([a ^ b], dtype=torch.long)
+            optimizer.zero_grad(set_to_none=True)
+            logits, _ = model(x)
+            loss = nn.functional.cross_entropy(logits, target)
+            if not torch.isfinite(loss).item():
+                training_stable = False
+                break
+            correct += int(logits.argmax(dim=1).item() == int(target.item()))
+            loss.backward()
+            gradients_finite = all(
+                p.grad is None or torch.isfinite(p.grad).all().item()
+                for p in model.parameters()
+            )
+            if not gradients_finite:
+                training_stable = False
+                optimizer.zero_grad(set_to_none=True)
+                break
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0, error_if_nonfinite=True)
+            optimizer.step()
+            if not all(torch.isfinite(p).all().item() for p in model.parameters()):
+                training_stable = False
+                break
+            losses.append(float(loss.detach().item()))
+            updates_completed += 1
+        model.eval()
+        eval_pairs = [(a, b) for a, b in PAIRS for _ in range(eval_repeats_per_pair)]
+        random.Random(500_000 + seed).shuffle(eval_pairs)
+        with torch.no_grad():
+            x_eval = torch.tensor([observation(a, b) for a, b in eval_pairs], dtype=torch.float32)
+            y_eval = torch.tensor([a ^ b for a, b in eval_pairs], dtype=torch.long)
+            logits, spikes = model(x_eval)
+            predictions = logits.argmax(dim=1)
+            per_pair = {}
+            for a, b in PAIRS:
+                idx = [i for i, pair in enumerate(eval_pairs) if pair == (a, b)]
+                per_pair[f"{a}{b}"] = round(float((predictions[idx] == y_eval[idx]).float().mean().item()), 4)
+            return {
+                "seed": seed,
+                "condition": "online_end_to_end_bptt_snn",
+                "train_steps": train_steps,
+                "updates_completed": updates_completed,
+                "mean_online_training_accuracy": round(correct / max(1, updates_completed), 4),
+                "final_training_loss": round(losses[-1], 6) if losses else None,
+                "training_stable": training_stable,
+                "evaluation_trials": len(eval_pairs),
+                "heldout_greedy_accuracy": round(float((predictions == y_eval).float().mean().item()), 4),
+                "heldout_accuracy_by_input_pair": per_pair,
+                "mean_eval_spikes_per_step": round(float(spikes.sum(dim=1).mean().item()), 4),
+                "all_states_finite": bool(torch.isfinite(logits).all().item() and all(torch.isfinite(p).all().item() for p in model.parameters())),
+            }
+
 def run_benchmark(
     seeds: list[int] | None = None,
     train_steps: int = 1500,
@@ -297,11 +367,13 @@ def run_benchmark(
         results.append(run_snn_condition(seed, train_steps, eval_repeats_per_pair, False))
         results.append(run_mlp_baseline(seed, train_steps, eval_repeats_per_pair))
         results.append(run_end_to_end_snn_baseline(seed, train_steps, eval_repeats_per_pair))
+        results.append(run_online_bptt_snn(seed, train_steps, eval_repeats_per_pair))
 
     online = {r["seed"]: r for r in results if r["condition"] == "online_readout_update"}
     frozen = {r["seed"]: r for r in results if r["condition"] == "frozen_readout_control"}
     mlp = {r["seed"]: r for r in results if r["condition"] == "nonlinear_mlp_sanity_baseline"}
     end_to_end = {r["seed"]: r for r in results if r["condition"] == "end_to_end_trainable_snn"}
+    online_bptt = {r["seed"]: r for r in results if r["condition"] == "online_end_to_end_bptt_snn"}
     paired = [online[s]["heldout_greedy_accuracy"] - frozen[s]["heldout_greedy_accuracy"] for s in seeds]
 
     summary = {}
@@ -310,6 +382,7 @@ def run_benchmark(
         ("frozen_readout_control", frozen),
         ("nonlinear_mlp_sanity_baseline", mlp),
         ("end_to_end_trainable_snn", end_to_end),
+        ("online_end_to_end_bptt_snn", online_bptt),
     ):
         rows = list(by_seed.values())
         summary[name] = {
@@ -332,7 +405,7 @@ def run_benchmark(
         "experiment": "awakening_reset_state_generalization_xor_v2",
         "training": (
             "random online XOR stream for SNN; target withheld from stationary input features; "
-            "nonlinear MLP positive control and end-to-end trainable SNN control trained on the complete XOR truth table"
+            "nonlinear MLP positive control and offline end-to-end SNN control trained on the complete XOR truth table; online end-to-end SNN updates after each labeled random example"
         ),
         "evaluation": (
             "balanced shuffled XOR pairs; SNN learning/exploration disabled; transient recurrent "
@@ -349,8 +422,7 @@ def run_benchmark(
             "If the MLP cannot learn XOR, inspect the benchmark pipeline. If the end-to-end SNN "
             "succeeds but online Awakening fails, readout-only online learning is the bottleneck. "
             "If only the MLP succeeds, inspect spiking-cell gradients, firing activity and "
-            "optimization. Paired SNN confidence intervals use a normal approximation. Results do "
-            "not establish English acquisition, general intelligence, autonomy, or consciousness."
+            "optimization. The online end-to-end BPTT condition tests whether updating cell and readout on each labeled example closes the gap. Training-stability flags expose non-finite updates. Paired readout-control confidence intervals use a normal approximation. Results do not establish English acquisition, general intelligence, autonomy, or consciousness."
         ),
         "runs": results,
     }
