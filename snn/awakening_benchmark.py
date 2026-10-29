@@ -17,16 +17,24 @@ SNN_DIR = ROOT / "snn"
 if str(SNN_DIR) not in sys.path:
     sys.path.insert(0, str(SNN_DIR))
 
-import torch
 from awakening import AwakeningAgent
 
 
 def run_condition(seed: int, steps: int, learning: bool) -> dict[str, Any]:
+    if steps < 1:
+        raise ValueError("steps must be positive")
     agent = AwakeningAgent(seed=seed)
     if not learning:
         agent.learning_rate = 0.0
 
-    records = agent.run(steps)
+    # The interactive agent intentionally caps each call at 100 steps.
+    records = []
+    remaining = steps
+    while remaining:
+        batch = min(100, remaining)
+        records.extend(agent.run(batch))
+        remaining -= batch
+
     window = max(1, min(100, steps // 4))
     windows = []
     for start in range(0, len(records), window):
