@@ -101,6 +101,11 @@ def run_governed_cycle(
     previous_best_trial = state.get("best_trial")
     cycle_seed = int(seed) + len(state["cycles"]) * 1009
     final_checkpoint = Path(checkpoint_path)
+    same_corpus_as_previous = bool(
+        state["cycles"]
+        and state["cycles"][-1].get("corpus_sha256") == manifest.get("corpus_sha256")
+    )
+    warm_start_path = str(final_checkpoint) if same_corpus_as_previous and final_checkpoint.is_file() else None
     candidate_checkpoint = final_checkpoint.with_name(final_checkpoint.stem + "_candidate" + final_checkpoint.suffix)
     report = run_trials(
         corpus=corpus,
@@ -112,6 +117,7 @@ def run_governed_cycle(
         device=device,
         checkpoint_path=str(candidate_checkpoint),
         previous_best=previous_best_trial,
+        warm_start_checkpoint=warm_start_path,
     )
     best = report.get("best_trial")
     if best and (previous_best is None or best["validation_loss"] < previous_best) and candidate_checkpoint.exists():
@@ -125,6 +131,8 @@ def run_governed_cycle(
         "approved": True,
         "search_strategy": report.get("search_strategy"),
         "cycle_seed": cycle_seed,
+        "warm_start_enabled": warm_start_path is not None,
+        "warm_start_note": "Compatible candidates continue from the prior best checkpoint only when the corpus hash is unchanged."
         "dataset_id": manifest["dataset_id"],
         "corpus_sha256": manifest.get("corpus_sha256"),
         "corpus_limit_bytes": MAX_CORPUS_BYTES,
