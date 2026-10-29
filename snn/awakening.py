@@ -112,7 +112,9 @@ class AwakeningAgent:
         # Prediction-error update: reinforce correct output and suppress the
         # incorrect output. This is an online readout rule, not SNN self-discovery.
         with torch.no_grad():
-            delta = self.learning_rate * (target - torch.softmax(scores[0], dim=0))
+            target_distribution = torch.zeros_like(scores[0])
+            target_distribution[target] = 1.0
+            delta = self.learning_rate * (target_distribution - torch.softmax(scores[0], dim=0))
             self.readout.weight.add_(delta[:, None] * self.previous_spikes)
             self.readout.bias.add_(delta)
             self.readout.weight.clamp_(-1.0, 1.0)
