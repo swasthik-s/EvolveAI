@@ -474,13 +474,23 @@ def run_benchmark(
             "mean_heldout_greedy_accuracy": round(
                 statistics.mean(r["heldout_greedy_accuracy"] for r in rows), 4
             ),
-            "mean_heldout_accuracy_by_input_pair": {
-                pair: round(statistics.mean(r["heldout_accuracy_by_input_pair"][pair] for r in rows), 4)
-                for pair in ("00", "01", "10", "11")
-            },
             "finite_runs": sum(bool(r["all_states_finite"]) for r in rows),
             "runs": len(rows),
         }
+        if name == "online_end_to_end_bptt_parity3_snn":
+            summary[name]["mean_heldout_accuracy_by_input_pattern"] = {
+                pattern: round(
+                    statistics.mean(r["heldout_accuracy_by_input_pattern"][pattern] for r in rows), 4
+                )
+                for pattern in ("000", "001", "010", "011", "100", "101", "110", "111")
+            }
+        else:
+            summary[name]["mean_heldout_accuracy_by_input_pair"] = {
+                pair: round(
+                    statistics.mean(r["heldout_accuracy_by_input_pair"][pair] for r in rows), 4
+                )
+                for pair in ("00", "01", "10", "11")
+            }
         if name in ("online_readout_update", "frozen_readout_control"):
             summary[name]["mean_train_greedy_accuracy"] = round(
                 statistics.mean(r["train_greedy_accuracy"] for r in rows), 4
