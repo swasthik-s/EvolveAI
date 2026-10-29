@@ -81,3 +81,5 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
     }
     assert all(row["evaluation_trials"] == 8 for row in result["runs"])
     assert all(row["all_states_finite"] for row in result["runs"])
+    mlp = next(row for row in result["runs"] if row["condition"] == "nonlinear_mlp_sanity_baseline")
+    assert mlp["heldout_greedy_accuracy"] >= 0.99
