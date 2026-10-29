@@ -1,12 +1,15 @@
-"""Controlled benchmark for the Awakening SNN experiment.
+"""Paired benchmark for Awakening's online readout learning.
 
-Compares online readout updates against a frozen-readout control across seeds.
-This is a diagnostic toy-task benchmark, not a test of general intelligence.
-Run from repository root: python snn/awakening_benchmark.py
+Compares online updates with a frozen-readout control on the same seeded XOR
+stream. Reports greedy accuracy separately from exploratory actions.
+
+Run from repository root:
+    python snn/awakening_benchmark.py
 """
 from __future__ import annotations
 
 import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -27,7 +30,6 @@ def run_condition(seed: int, steps: int, learning: bool) -> dict[str, Any]:
     if not learning:
         agent.learning_rate = 0.0
 
-    # The interactive agent intentionally caps each call at 100 steps.
     records = []
     remaining = steps
     while remaining:
@@ -35,70 +37,94 @@ def run_condition(seed: int, steps: int, learning: bool) -> dict[str, Any]:
         records.extend(agent.run(batch))
         remaining -= batch
 
-    window = max(1, min(100, steps // 4))
-    windows = []
-    for start in range(0, len(records), window):
-        chunk = records[start:start + window]
-        if chunk:
-            windows.append({
-                "from_step": chunk[0]["step"],
-                "to_step": chunk[-1]["step"],
-                "accuracy": round(sum(r["correct"] for r in chunk) / len(chunk), 4),
-                "mean_spikes": round(sum(r["spike_count"] for r in chunk) / len(chunk), 4),
-            })
-
+    tail_size = min(200, len(records))
+    tail = records[-tail_size:]
     return {
         "seed": seed,
         "condition": "online_readout_update" if learning else "frozen_readout_control",
-        "steps": steps,
-        "overall_accuracy": round(sum(r["correct"] for r in records) / len(records), 4),
-        "last_window_accuracy": windows[-1]["accuracy"],
-        "mean_spikes_per_step": round(sum(r["spike_count"] for r in records) / len(records), 4),
+        "steps": len(records),
+        "overall_action_accuracy": sum(r["correct"] for r in records) / len(records),
+        "overall_greedy_accuracy": sum(r["greedy_correct"] for r in records) / len(records),
+        "final_window_action_accuracy": sum(r["correct"] for r in tail) / len(tail),
+        "final_window_greedy_accuracy": sum(r["greedy_correct"] for r in tail) / len(tail),
+        "exploration_rate_observed": sum(r["explored"] for r in records) / len(records),
+        "mean_spikes_per_step": sum(r["spike_count"] for r in records) / len(records),
         "non_finite_resets": agent.fault_count,
         "all_states_finite": all(r["finite_state"] for r in records),
-        "prediction_counts": {
-            "predict_0": sum(r["prediction"] == 0 for r in records),
-            "predict_1": sum(r["prediction"] == 1 for r in records),
-        },
-        "windows": windows,
     }
 
 
-def run_benchmark(seeds: list[int] | None = None, steps: int = 1000) -> dict[str, Any]:
-    seeds = seeds or [7, 21, 42, 73, 101]
+def paired_stats(differences: list[float]) -> dict[str, float | int]:
+    n = len(differences)
+    mean = statistics.mean(differences)
+    sd = statistics.stdev(differences) if n > 1 else 0.0
+    se = sd / math.sqrt(n) if n else 0.0
+    return {
+        "paired_seeds": n,
+        "mean_difference": round(mean, 4),
+        "standard_deviation_of_difference": round(sd, 4),
+        "standard_error": round(se, 4),
+        "approx_95pct_ci_low": round(mean - 1.96 * se, 4),
+        "approx_95pct_ci_high": round(mean + 1.96 * se, 4),
+        "seeds_online_better": sum(d > 0 for d in differences),
+        "seeds_tied": sum(d == 0 for d in differences),
+        "seeds_online_worse": sum(d < 0 for d in differences),
+    }
+
+
+def run_benchmark(seeds: list[int] | None = None, steps: int = 2000) -> dict[str, Any]:
+    seeds = list(range(1, 31)) if seeds is None else seeds
     results = [
         run_condition(seed, steps, learning)
         for seed in seeds
         for learning in (True, False)
     ]
-    grouped = {}
-    for condition in ("online_readout_update", "frozen_readout_control"):
-        rows = [r for r in results if r["condition"] == condition]
-        grouped[condition] = {
-            "mean_overall_accuracy": round(statistics.mean(r["overall_accuracy"] for r in rows), 4),
-            "mean_last_window_accuracy": round(statistics.mean(r["last_window_accuracy"] for r in rows), 4),
+    by_condition = {
+        condition: [r for r in results if r["condition"] == condition]
+        for condition in ("online_readout_update", "frozen_readout_control")
+    }
+    summary = {}
+    for condition, rows in by_condition.items():
+        summary[condition] = {
+            "mean_overall_action_accuracy": round(statistics.mean(r["overall_action_accuracy"] for r in rows), 4),
+            "mean_overall_greedy_accuracy": round(statistics.mean(r["overall_greedy_accuracy"] for r in rows), 4),
+            "mean_final_window_action_accuracy": round(statistics.mean(r["final_window_action_accuracy"] for r in rows), 4),
+            "mean_final_window_greedy_accuracy": round(statistics.mean(r["final_window_greedy_accuracy"] for r in rows), 4),
+            "mean_observed_exploration_rate": round(statistics.mean(r["exploration_rate_observed"] for r in rows), 4),
             "mean_spikes_per_step": round(statistics.mean(r["mean_spikes_per_step"] for r in rows), 4),
             "finite_runs": sum(r["all_states_finite"] for r in rows),
             "runs": len(rows),
         }
-    difference = grouped["online_readout_update"]["mean_last_window_accuracy"] - grouped["frozen_readout_control"]["mean_last_window_accuracy"]
+
+    online = {r["seed"]: r for r in by_condition["online_readout_update"]}
+    frozen = {r["seed"]: r for r in by_condition["frozen_readout_control"]}
+    overall_diffs = [
+        online[s]["overall_greedy_accuracy"] - frozen[s]["overall_greedy_accuracy"]
+        for s in seeds
+    ]
+    final_diffs = [
+        online[s]["final_window_greedy_accuracy"] - frozen[s]["final_window_greedy_accuracy"]
+        for s in seeds
+    ]
     return {
-        "experiment": "awakening_online_learning_vs_frozen_control",
-        "task": "online XOR with target withheld from observation features",
+        "experiment": "awakening_paired_online_learning_vs_frozen_control",
+        "task": "online XOR; target withheld from observation features",
         "steps_per_run": steps,
         "seeds": seeds,
         "chance_accuracy_reference": 0.5,
-        "summary": grouped,
-        "last_window_accuracy_difference_online_minus_frozen": round(difference, 4),
+        "primary_metric": "greedy accuracy (argmax prediction, excluding random exploratory actions)",
+        "summary": summary,
+        "paired_overall_greedy_accuracy_difference": paired_stats(overall_diffs),
+        "paired_final_window_greedy_accuracy_difference": paired_stats(final_diffs),
         "interpretation_guidance": (
-            "Evidence for learning requires a repeatable advantage over the frozen control across seeds, "
-            "finite state, and non-degenerate spiking. This task alone says nothing about English, "
-            "general intelligence, autonomy, or consciousness."
+            "A positive paired difference with a confidence interval above zero and a repeatable "
+            "advantage across seeds supports a learning effect on this toy task. This does not "
+            "demonstrate English acquisition, general intelligence, autonomy, or consciousness. "
+            "The confidence interval is a normal-approximation interval, not an exact small-sample test."
         ),
         "runs": results,
     }
 
 
 if __name__ == "__main__":
-    report = run_benchmark()
-    print(json.dumps(report, indent=2))
+    print(json.dumps(run_benchmark(), indent=2))
