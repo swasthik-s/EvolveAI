@@ -59,7 +59,8 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
                block_size: int = 32, batch_size: int = 4, seed: int = 42,
                progress=None, device: str = "auto",
                checkpoint_path: str | None = None,
-               previous_best: dict | None = None) -> dict:
+               previous_best: dict | None = None,
+               warm_start_checkpoint: str | None = None) -> dict:
     if len(corpus.encode("utf-8")) < 100:
         raise ValueError("Corpus must contain at least 100 UTF-8 bytes.")
     if not 1 <= steps <= 300:
@@ -70,20 +71,37 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
     records = []
     best_loss = float("inf")
     started = time.time()
+    warm_payload = None
+    if warm_start_checkpoint and Path(warm_start_checkpoint).is_file():
+        try:
+            warm_payload = torch.load(warm_start_checkpoint, map_location="cpu", weights_only=True)
+        except Exception:
+            warm_payload = None
     for index, config in enumerate(configs, start=1):
         trial_start = time.time()
         try:
+            initial_state_dict = None
+            warm_config = warm_payload.get("config", {}) if isinstance(warm_payload, dict) else {}
+            warm_compatible = bool(
+                warm_payload and warm_config.get("architecture") == config.architecture
+                and int(warm_config.get("hidden_size", -1)) == config.hidden_size
+                and int(warm_config.get("embedding_dim", -1)) == 24
+            )
+            if warm_compatible:
+                initial_state_dict = warm_payload.get("state_dict")
             result = train(
                 corpus, steps=steps, block_size=block_size, batch_size=batch_size,
                 hidden_size=config.hidden_size, embedding_dim=24,
                 learning_rate=config.learning_rate, seed=config.seed,
                 architecture=config.architecture, device=device,
+                initial_state_dict=initial_state_dict,
             )
             final = result["history"][-1]
             record = {
                 **asdict(config),
                 "trial": index,
                 "status": "completed",
+                "warm_started": initial_state_dict is not None,
                 "steps": steps,
                 "train_loss": final["train_loss"],
                 "validation_loss": final["val_loss"],
@@ -122,6 +140,7 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
         "objective": "minimize final validation byte-level cross-entropy",
         "search_strategy": "adaptive neighborhood around historical best" if previous_best else "initial reviewed configuration search",
         "previous_best_validation_loss": previous_best.get("validation_loss") if previous_best else None,
+        "warm_start_checkpoint": warm_start_checkpoint,
         "corpus_bytes": len(corpus.encode("utf-8")),
         "device_requested": device,
         "device_used": next((r.get("device") for r in completed), None),
