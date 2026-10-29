@@ -437,6 +437,101 @@ def run_online_parity3_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pa
                 'all_states_finite': bool(torch.isfinite(logits).all().item() and all(torch.isfinite(p).all().item() for p in model.parameters())),
             }
 
+
+def parity4_observation(a: int, b: int, c: int, d: int) -> list[float]:
+    """Encode four independent bits without exposing their parity target."""
+    return [float(a), float(b), float(c), float(d), 0.0, 0.0, 0.0]
+
+
+def run_online_parity4_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pattern: int) -> dict[str, Any]:
+    """Stress-test online end-to-end learning on four-bit parity (16 patterns)."""
+    patterns = [
+        (a, b, c, d)
+        for a in (0, 1) for b in (0, 1) for c in (0, 1) for d in (0, 1)
+    ]
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(seed + 180_000)
+        model = TrainableXORSNN()
+        with torch.no_grad():
+            model.cell.recurrent_current.weight.mul_(0.25)
+            model.cell.slow_context.weight.mul_(0.10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
+        rng = random.Random(800_000 + seed)
+        correct = 0
+        losses = []
+        updates_completed = 0
+        training_stable = True
+        model.train()
+        for _ in range(train_steps):
+            a, b, c, d = (rng.randint(0, 1) for _ in range(4))
+            x = torch.tensor([parity4_observation(a, b, c, d)], dtype=torch.float32)
+            target = torch.tensor([a ^ b ^ c ^ d], dtype=torch.long)
+            optimizer.zero_grad(set_to_none=True)
+            logits, _ = model(x)
+            loss = nn.functional.cross_entropy(logits, target)
+            if not torch.isfinite(loss).item():
+                training_stable = False
+                break
+            example_correct = int(logits.argmax(dim=1).item() == int(target.item()))
+            loss.backward()
+            gradients_finite = all(
+                p.grad is None or torch.isfinite(p.grad).all().item()
+                for p in model.parameters()
+            )
+            if not gradients_finite:
+                training_stable = False
+                optimizer.zero_grad(set_to_none=True)
+                break
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0, error_if_nonfinite=True)
+            optimizer.step()
+            if not all(torch.isfinite(p).all().item() for p in model.parameters()):
+                training_stable = False
+                break
+            losses.append(float(loss.detach().item()))
+            correct += example_correct
+            updates_completed += 1
+
+        model.eval()
+        eval_patterns = [pattern for pattern in patterns for _ in range(eval_repeats_per_pattern)]
+        random.Random(900_000 + seed).shuffle(eval_patterns)
+        with torch.no_grad():
+            x_eval = torch.tensor(
+                [parity4_observation(*pattern) for pattern in eval_patterns],
+                dtype=torch.float32,
+            )
+            y_eval = torch.tensor(
+                [a ^ b ^ c ^ d for a, b, c, d in eval_patterns],
+                dtype=torch.long,
+            )
+            logits, spikes = model(x_eval)
+            predictions = logits.argmax(dim=1)
+            per_pattern = {}
+            for pattern in patterns:
+                idx = [i for i, candidate in enumerate(eval_patterns) if candidate == pattern]
+                per_pattern["".join(map(str, pattern))] = round(
+                    float((predictions[idx] == y_eval[idx]).float().mean().item()), 4
+                )
+            return {
+                "seed": seed,
+                "condition": "online_end_to_end_bptt_parity4_snn",
+                "train_steps": train_steps,
+                "updates_completed": updates_completed,
+                "mean_online_training_accuracy": round(correct / max(1, updates_completed), 4),
+                "final_training_loss": round(losses[-1], 6) if losses else None,
+                "training_stable": training_stable,
+                "evaluation_trials": len(eval_patterns),
+                "heldout_greedy_accuracy": round(
+                    float((predictions == y_eval).float().mean().item()), 4
+                ),
+                "heldout_accuracy_by_input_pattern": per_pattern,
+                "mean_eval_spikes_per_step": round(float(spikes.sum(dim=1).mean().item()), 4),
+                "all_states_finite": bool(
+                    torch.isfinite(logits).all().item()
+                    and all(torch.isfinite(p).all().item() for p in model.parameters())
+                ),
+            }
+
+
 def run_benchmark(
     seeds: list[int] | None = None,
     train_steps: int = 1500,
@@ -451,6 +546,7 @@ def run_benchmark(
         results.append(run_end_to_end_snn_baseline(seed, train_steps, eval_repeats_per_pair))
         results.append(run_online_bptt_snn(seed, train_steps, eval_repeats_per_pair))
         results.append(run_online_parity3_bptt_snn(seed, train_steps, eval_repeats_per_pair))
+        results.append(run_online_parity4_bptt_snn(seed, train_steps, eval_repeats_per_pair))
 
     online = {r["seed"]: r for r in results if r["condition"] == "online_readout_update"}
     frozen = {r["seed"]: r for r in results if r["condition"] == "frozen_readout_control"}
@@ -458,6 +554,7 @@ def run_benchmark(
     end_to_end = {r["seed"]: r for r in results if r["condition"] == "end_to_end_trainable_snn"}
     online_bptt = {r["seed"]: r for r in results if r["condition"] == "online_end_to_end_bptt_snn"}
     parity3_bptt = {r["seed"]: r for r in results if r["condition"] == "online_end_to_end_bptt_parity3_snn"}
+    parity4_bptt = {r["seed"]: r for r in results if r["condition"] == "online_end_to_end_bptt_parity4_snn"}
     paired = [online[s]["heldout_greedy_accuracy"] - frozen[s]["heldout_greedy_accuracy"] for s in seeds]
 
     summary = {}
@@ -468,6 +565,7 @@ def run_benchmark(
         ("end_to_end_trainable_snn", end_to_end),
         ("online_end_to_end_bptt_snn", online_bptt),
         ("online_end_to_end_bptt_parity3_snn", parity3_bptt),
+        ("online_end_to_end_bptt_parity4_snn", parity4_bptt),
     ):
         rows = list(by_seed.values())
         summary[name] = {
@@ -477,12 +575,17 @@ def run_benchmark(
             "finite_runs": sum(bool(r["all_states_finite"]) for r in rows),
             "runs": len(rows),
         }
-        if name == "online_end_to_end_bptt_parity3_snn":
+        if name in ("online_end_to_end_bptt_parity3_snn", "online_end_to_end_bptt_parity4_snn"):
+            patterns = (
+                ("000", "001", "010", "011", "100", "101", "110", "111")
+                if name == "online_end_to_end_bptt_parity3_snn"
+                else tuple(f"{i:04b}" for i in range(16))
+            )
             summary[name]["mean_heldout_accuracy_by_input_pattern"] = {
                 pattern: round(
                     statistics.mean(r["heldout_accuracy_by_input_pattern"][pattern] for r in rows), 4
                 )
-                for pattern in ("000", "001", "010", "011", "100", "101", "110", "111")
+                for pattern in patterns
             }
         else:
             summary[name]["mean_heldout_accuracy_by_input_pair"] = {
@@ -504,17 +607,21 @@ def run_benchmark(
             )
 
     return {
-        "experiment": "awakening_reset_state_generalization_xor_v2",
+        "experiment": "awakening_online_parity_stress_suite_v3",
         "training": (
             "random online XOR stream for SNN; target withheld from stationary input features; "
             "nonlinear MLP positive control and offline end-to-end SNN control trained on the complete XOR truth table; online end-to-end SNN updates after each labeled random example"
         ),
         "evaluation": (
             "balanced shuffled XOR pairs; SNN learning/exploration disabled; transient recurrent "
-            "state reset before every trial; stationary observation features used in train and eval"
+            "state reset before every trial; stationary observation features used in train and eval; parity3 and parity4 evaluate all 8 and 16 possible patterns respectively"
         ),
         "train_steps_per_run": train_steps,
-        "evaluation_trials_per_run": 4 * eval_repeats_per_pair,
+        "evaluation_trials_per_condition": {
+            "xor_conditions": 4 * eval_repeats_per_pair,
+            "parity3": 8 * eval_repeats_per_pair,
+            "parity4": 16 * eval_repeats_per_pair,
+        },
         "seeds": seeds,
         "chance_accuracy_reference": 0.5,
         "summary": summary,
