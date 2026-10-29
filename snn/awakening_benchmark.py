@@ -242,8 +242,16 @@ def run_end_to_end_snn_baseline(
             if not torch.isfinite(loss):
                 break
             loss.backward()
-            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            gradients_finite = all(
+                p.grad is None or torch.isfinite(p.grad).all().item()
+                for p in model.parameters()
+            )
+            if not gradients_finite:
+                break
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0, error_if_nonfinite=True)
             optimizer.step()
+            if not all(torch.isfinite(p).all().item() for p in model.parameters()):
+                break
             losses.append(float(loss.detach().item()))
 
         model.eval()
@@ -311,7 +319,7 @@ def run_online_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pair: int)
             if not torch.isfinite(loss).item():
                 training_stable = False
                 break
-            correct += int(logits.argmax(dim=1).item() == int(target.item()))
+            example_correct = int(logits.argmax(dim=1).item() == int(target.item()))
             loss.backward()
             gradients_finite = all(
                 p.grad is None or torch.isfinite(p.grad).all().item()
@@ -327,6 +335,7 @@ def run_online_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pair: int)
                 training_stable = False
                 break
             losses.append(float(loss.detach().item()))
+            correct += example_correct
             updates_completed += 1
         model.eval()
         eval_pairs = [(a, b) for a, b in PAIRS for _ in range(eval_repeats_per_pair)]
@@ -399,6 +408,13 @@ def run_benchmark(
         if name in ("online_readout_update", "frozen_readout_control"):
             summary[name]["mean_train_greedy_accuracy"] = round(
                 statistics.mean(r["train_greedy_accuracy"] for r in rows), 4
+            )
+        if name == "online_end_to_end_bptt_snn":
+            summary[name]["mean_online_training_accuracy"] = round(
+                statistics.mean(r["mean_online_training_accuracy"] for r in rows), 4
+            )
+            summary[name]["training_stable_runs"] = sum(
+                bool(r["training_stable"]) for r in rows
             )
 
     return {
