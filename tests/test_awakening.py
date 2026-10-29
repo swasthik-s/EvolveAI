@@ -80,8 +80,9 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
         "nonlinear_mlp_sanity_baseline",
         "end_to_end_trainable_snn",
         "online_end_to_end_bptt_snn",
+        "online_end_to_end_bptt_parity3_snn",
     }
-    assert all(row["evaluation_trials"] == 8 for row in result["runs"])
+    assert all(row["evaluation_trials"] == (16 if row["condition"] == "online_end_to_end_bptt_parity3_snn" else 8) for row in result["runs"])
     assert all(row["all_states_finite"] for row in result["runs"])
     end_to_end = next(row for row in result["runs"] if row["condition"] == "end_to_end_trainable_snn")
     assert end_to_end["evaluation_trials"] == 8
@@ -89,5 +90,10 @@ def test_benchmark_smoke_runs_all_conditions_with_balanced_evaluation():
     assert online_bptt["evaluation_trials"] == 8
     assert online_bptt["updates_completed"] <= 16
     assert isinstance(online_bptt["training_stable"], bool)
+    parity3 = next(row for row in result["runs"] if row["condition"] == "online_end_to_end_bptt_parity3_snn")
+    assert parity3["evaluation_trials"] == 16
+    assert len(parity3["heldout_accuracy_by_input_pattern"]) == 8
+    assert parity3["updates_completed"] <= 16
+    assert isinstance(parity3["training_stable"], bool)
     mlp = next(row for row in result["runs"] if row["condition"] == "nonlinear_mlp_sanity_baseline")
     assert mlp["heldout_greedy_accuracy"] >= 0.99
