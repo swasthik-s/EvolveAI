@@ -109,15 +109,16 @@ if st.session_state.get("awakening_notice"):
 
 awakening_agent = st.session_state["awakening_agent"]
 aw_summary = awakening_agent.summary()
-aw_metrics = st.columns(4)
+aw_metrics = st.columns(5)
 aw_metrics[0].metric("Experience steps", aw_summary["step_count"])
-aw_metrics[1].metric("Recent prediction accuracy", "—" if aw_summary["recent_prediction_accuracy"] is None else f"{aw_summary['recent_prediction_accuracy']:.1%}")
-aw_metrics[2].metric("Total reward", f"{aw_summary['total_reward']:.2f}")
-aw_metrics[3].metric("Spikes in last step", aw_summary["spike_count_last_step"])
+aw_metrics[1].metric("Recent accuracy (last 100)", "—" if aw_summary["recent_prediction_accuracy"] is None else f"{aw_summary['recent_prediction_accuracy']:.1%}")
+aw_metrics[2].metric("Mean spikes / step", f"{aw_summary['mean_spike_count_recent']:.2f}")
+aw_metrics[3].metric("Non-finite resets", aw_summary["non_finite_resets"])
+aw_metrics[4].metric("Total reward", f"{aw_summary['total_reward']:.2f}")
 st.caption(aw_summary["note"])
 if awakening_agent.history:
     aw_history_df = pd.DataFrame(awakening_agent.history)
-    st.line_chart(aw_history_df.set_index("step")[["reward", "surprise"]])
+    st.line_chart(aw_history_df.set_index("step")[["reward", "surprise", "spike_count"]])
     st.dataframe(aw_history_df.tail(20), use_container_width=True, hide_index=True)
 else:
     st.info("The agent has not experienced the environment yet. Run a few steps to begin.")
