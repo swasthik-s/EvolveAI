@@ -364,6 +364,79 @@ def run_online_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pair: int)
                 "all_states_finite": bool(torch.isfinite(logits).all().item() and all(torch.isfinite(p).all().item() for p in model.parameters())),
             }
 
+
+def parity3_observation(a: int, b: int, c: int) -> list[float]:
+    """Encode three independent bits without exposing their parity target."""
+    return [float(a), float(b), float(c), 0.0, 0.0, 0.0, 0.0]
+
+def run_online_parity3_bptt_snn(seed: int, train_steps: int, eval_repeats_per_pattern: int) -> dict[str, Any]:
+    """Stress-test online end-to-end learning on three-bit parity."""
+    patterns = [(a, b, c) for a in (0, 1) for b in (0, 1) for c in (0, 1)]
+    with torch.random.fork_rng(devices=[]):
+        torch.random.default_generator.manual_seed(seed + 160_000)
+        model = TrainableXORSNN()
+        with torch.no_grad():
+            model.cell.recurrent_current.weight.mul_(0.25)
+            model.cell.slow_context.weight.mul_(0.10)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.003)
+        rng = random.Random(600_000 + seed)
+        correct = 0
+        losses = []
+        updates_completed = 0
+        training_stable = True
+        model.train()
+        for _ in range(train_steps):
+            a, b, c = (rng.randint(0, 1) for _ in range(3))
+            x = torch.tensor([parity3_observation(a, b, c)], dtype=torch.float32)
+            target = torch.tensor([a ^ b ^ c], dtype=torch.long)
+            optimizer.zero_grad(set_to_none=True)
+            logits, _ = model(x)
+            loss = nn.functional.cross_entropy(logits, target)
+            if not torch.isfinite(loss).item():
+                training_stable = False
+                break
+            example_correct = int(logits.argmax(dim=1).item() == int(target.item()))
+            loss.backward()
+            gradients_finite = all(p.grad is None or torch.isfinite(p.grad).all().item() for p in model.parameters())
+            if not gradients_finite:
+                training_stable = False
+                optimizer.zero_grad(set_to_none=True)
+                break
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0, error_if_nonfinite=True)
+            optimizer.step()
+            if not all(torch.isfinite(p).all().item() for p in model.parameters()):
+                training_stable = False
+                break
+            losses.append(float(loss.detach().item()))
+            correct += example_correct
+            updates_completed += 1
+        model.eval()
+        eval_patterns = [pattern for pattern in patterns for _ in range(eval_repeats_per_pattern)]
+        random.Random(700_000 + seed).shuffle(eval_patterns)
+        with torch.no_grad():
+            x_eval = torch.tensor([parity3_observation(*pattern) for pattern in eval_patterns], dtype=torch.float32)
+            y_eval = torch.tensor([a ^ b ^ c for a, b, c in eval_patterns], dtype=torch.long)
+            logits, spikes = model(x_eval)
+            predictions = logits.argmax(dim=1)
+            per_pattern = {}
+            for pattern in patterns:
+                idx = [i for i, candidate in enumerate(eval_patterns) if candidate == pattern]
+                per_pattern[''.join(map(str, pattern))] = round(float((predictions[idx] == y_eval[idx]).float().mean().item()), 4)
+            return {
+                'seed': seed,
+                'condition': 'online_end_to_end_bptt_parity3_snn',
+                'train_steps': train_steps,
+                'updates_completed': updates_completed,
+                'mean_online_training_accuracy': round(correct / max(1, updates_completed), 4),
+                'final_training_loss': round(losses[-1], 6) if losses else None,
+                'training_stable': training_stable,
+                'evaluation_trials': len(eval_patterns),
+                'heldout_greedy_accuracy': round(float((predictions == y_eval).float().mean().item()), 4),
+                'heldout_accuracy_by_input_pattern': per_pattern,
+                'mean_eval_spikes_per_step': round(float(spikes.sum(dim=1).mean().item()), 4),
+                'all_states_finite': bool(torch.isfinite(logits).all().item() and all(torch.isfinite(p).all().item() for p in model.parameters())),
+            }
+
 def run_benchmark(
     seeds: list[int] | None = None,
     train_steps: int = 1500,
@@ -377,12 +450,14 @@ def run_benchmark(
         results.append(run_mlp_baseline(seed, train_steps, eval_repeats_per_pair))
         results.append(run_end_to_end_snn_baseline(seed, train_steps, eval_repeats_per_pair))
         results.append(run_online_bptt_snn(seed, train_steps, eval_repeats_per_pair))
+        results.append(run_online_parity3_bptt_snn(seed, train_steps, eval_repeats_per_pair))
 
     online = {r["seed"]: r for r in results if r["condition"] == "online_readout_update"}
     frozen = {r["seed"]: r for r in results if r["condition"] == "frozen_readout_control"}
     mlp = {r["seed"]: r for r in results if r["condition"] == "nonlinear_mlp_sanity_baseline"}
     end_to_end = {r["seed"]: r for r in results if r["condition"] == "end_to_end_trainable_snn"}
     online_bptt = {r["seed"]: r for r in results if r["condition"] == "online_end_to_end_bptt_snn"}
+    parity3_bptt = {r["seed"]: r for r in results if r["condition"] == "online_end_to_end_bptt_parity3_snn"}
     paired = [online[s]["heldout_greedy_accuracy"] - frozen[s]["heldout_greedy_accuracy"] for s in seeds]
 
     summary = {}
@@ -392,6 +467,7 @@ def run_benchmark(
         ("nonlinear_mlp_sanity_baseline", mlp),
         ("end_to_end_trainable_snn", end_to_end),
         ("online_end_to_end_bptt_snn", online_bptt),
+        ("online_end_to_end_bptt_parity3_snn", parity3_bptt),
     ):
         rows = list(by_seed.values())
         summary[name] = {
@@ -438,7 +514,7 @@ def run_benchmark(
             "If the MLP cannot learn XOR, inspect the benchmark pipeline. If the end-to-end SNN "
             "succeeds but online Awakening fails, readout-only online learning is the bottleneck. "
             "If only the MLP succeeds, inspect spiking-cell gradients, firing activity and "
-            "optimization. The online end-to-end BPTT condition tests whether updating cell and readout on each labeled example closes the gap. Training-stability flags expose non-finite updates. Paired readout-control confidence intervals use a normal approximation. Results do not establish English acquisition, general intelligence, autonomy, or consciousness."
+            "optimization. The online end-to-end BPTT condition tests whether updating cell and readout on each labeled example closes the gap. The three-bit parity condition is a harder extension test, not evidence of broad reasoning. Training-stability flags expose non-finite updates. Paired readout-control confidence intervals use a normal approximation. Results do not establish English acquisition, general intelligence, autonomy, or consciousness."
         ),
         "runs": results,
     }
