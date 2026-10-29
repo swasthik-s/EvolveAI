@@ -7,6 +7,7 @@ not browse arbitrary URLs, execute downloaded code, or grant the model shell acc
 from __future__ import annotations
 
 import json
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -74,7 +75,12 @@ def run_governed_cycle(
 ) -> dict[str, Any]:
     """Run one bounded cycle and persist its report plus a compact history."""
     validate_dataset_manifest(manifest)
-    corpus_bytes = len(corpus.encode("utf-8"))
+    corpus_payload = corpus.encode("utf-8")
+    corpus_bytes = len(corpus_payload)
+    supplied_hash = manifest.get("corpus_sha256")
+    actual_hash = hashlib.sha256(corpus_payload).hexdigest()
+    if not supplied_hash or supplied_hash != actual_hash:
+        raise ValueError("Governor blocked this corpus: its hash does not match the provenance manifest.")
     if corpus_bytes < 100:
         raise ValueError("Governor requires at least 100 bytes of corpus.")
     if corpus_bytes > MAX_CORPUS_BYTES:
