@@ -200,8 +200,8 @@ else:
         def on_progress(step, total, record):
             bar.progress(step / total)
             status.write(f"Step {step}/{total} · train loss {record['train_loss']:.3f} · validation loss {record['val_loss']:.3f}")
-        with st.spinner("Training recurrent spiking network on CPU…"):
-            result = train(corpus, steps=int(steps), block_size=int(block_size), batch_size=int(batch_size), hidden_size=int(hidden_size), seed=int(seed), progress=on_progress, architecture=architecture)
+        with st.spinner("Training recurrent spiking network on the available device…"):
+            result = train(corpus, steps=int(steps), block_size=int(block_size), batch_size=int(batch_size), hidden_size=int(hidden_size), seed=int(seed), progress=on_progress, architecture=architecture, device="auto")
         st.session_state["snn_result"] = result
         st.success(f"Finished in {result['elapsed_seconds']:.1f}s")
 
@@ -216,7 +216,7 @@ if result:
     prompt = st.text_input("Prompt the trained byte-level model", value="User: Hello.\nAssistant:")
     amount = st.slider("New bytes to sample", 20, 240, 100, 20)
     if st.button("Generate continuation"):
-        continuation = result["model"].generate(prompt.encode("utf-8"), max_new_bytes=amount, device="cpu")
+        continuation = result["model"].generate(prompt.encode("utf-8"), max_new_bytes=amount, device=result.get("device", "cpu"))
         st.text_area("Raw generated continuation (may be gibberish)", decode(continuation), height=180)
     st.download_button("Download training metrics CSV", history.reset_index().to_csv(index=False), file_name="evolveai_snn_metrics.csv", mime="text/csv")
 
