@@ -91,6 +91,9 @@ def run_governed_cycle(
     state = load_state(state_path)
     if len(state["cycles"]) >= MAX_CYCLES:
         raise RuntimeError(f"Governor reached the {MAX_CYCLES}-cycle session history limit.")
+    previous_best = state.get("best_validation_loss")
+    final_checkpoint = Path(checkpoint_path)
+    candidate_checkpoint = final_checkpoint.with_name(final_checkpoint.stem + "_candidate" + final_checkpoint.suffix)
     report = run_trials(
         corpus=corpus,
         max_trials=int(max_trials),
@@ -99,8 +102,16 @@ def run_governed_cycle(
         batch_size=int(batch_size),
         seed=int(seed),
         device=device,
-        checkpoint_path=str(checkpoint_path),
+        checkpoint_path=str(candidate_checkpoint),
     )
+    best = report.get("best_trial")
+    if best and (previous_best is None or best["validation_loss"] < previous_best) and candidate_checkpoint.exists():
+        candidate_checkpoint.replace(final_checkpoint)
+        report["checkpoint_path"] = str(final_checkpoint)
+    else:
+        if candidate_checkpoint.exists():
+            candidate_checkpoint.unlink()
+        report["checkpoint_path"] = str(final_checkpoint) if final_checkpoint.exists() else None
     report["governor"] = {
         "approved": True,
         "dataset_id": manifest["dataset_id"],
@@ -110,8 +121,6 @@ def run_governed_cycle(
         "max_steps_per_trial": MAX_STEPS_PER_TRIAL,
         "internet_policy": "Allowlisted Hugging Face dataset provenance only; no arbitrary URL fetching or downloaded code execution.",
     }
-    best = report.get("best_trial")
-    previous_best = state.get("best_validation_loss")
     if best and (previous_best is None or best["validation_loss"] < previous_best):
         state["best_validation_loss"] = best["validation_loss"]
         state["best_trial"] = best
