@@ -1,7 +1,8 @@
-"""Paired benchmark for Awakening's online readout learning.
+"""Train/evaluate benchmark for Awakening's online XOR readout learning.
 
-Compares online updates with a frozen-readout control on the same seeded XOR
-stream. Reports greedy accuracy separately from exploratory actions.
+Each seed trains on a random online stream, then evaluates on a balanced,
+shuffled XOR set with learning and random exploration disabled. A frozen
+control receives the same training stream but never updates its readout.
 
 Run from repository root:
     python snn/awakening_benchmark.py
@@ -10,6 +11,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import statistics
 import sys
 from pathlib import Path
@@ -23,38 +25,7 @@ if str(SNN_DIR) not in sys.path:
 from awakening import AwakeningAgent
 
 
-def run_condition(seed: int, steps: int, learning: bool) -> dict[str, Any]:
-    if steps < 1:
-        raise ValueError("steps must be positive")
-    agent = AwakeningAgent(seed=seed)
-    if not learning:
-        agent.learning_rate = 0.0
-
-    records = []
-    remaining = steps
-    while remaining:
-        batch = min(100, remaining)
-        records.extend(agent.run(batch))
-        remaining -= batch
-
-    tail_size = min(200, len(records))
-    tail = records[-tail_size:]
-    return {
-        "seed": seed,
-        "condition": "online_readout_update" if learning else "frozen_readout_control",
-        "steps": len(records),
-        "overall_action_accuracy": sum(r["correct"] for r in records) / len(records),
-        "overall_greedy_accuracy": sum(r["greedy_correct"] for r in records) / len(records),
-        "final_window_action_accuracy": sum(r["correct"] for r in tail) / len(tail),
-        "final_window_greedy_accuracy": sum(r["greedy_correct"] for r in tail) / len(tail),
-        "exploration_rate_observed": sum(r["explored"] for r in records) / len(records),
-        "mean_spikes_per_step": sum(r["spike_count"] for r in records) / len(records),
-        "non_finite_resets": agent.fault_count,
-        "all_states_finite": all(r["finite_state"] for r in records),
-    }
-
-
-def paired_stats(differences: list[float]) -> dict[str, float | int]:
+def mean_ci(differences: list[float]) -> dict[str, Any]:
     n = len(differences)
     mean = statistics.mean(differences)
     sd = statistics.stdev(differences) if n > 1 else 0.0
@@ -62,65 +33,99 @@ def paired_stats(differences: list[float]) -> dict[str, float | int]:
     return {
         "paired_seeds": n,
         "mean_difference": round(mean, 4),
-        "standard_deviation_of_difference": round(sd, 4),
+        "standard_deviation": round(sd, 4),
         "standard_error": round(se, 4),
         "approx_95pct_ci_low": round(mean - 1.96 * se, 4),
         "approx_95pct_ci_high": round(mean + 1.96 * se, 4),
-        "seeds_online_better": sum(d > 0 for d in differences),
-        "seeds_tied": sum(d == 0 for d in differences),
-        "seeds_online_worse": sum(d < 0 for d in differences),
+        "online_better": sum(d > 0 for d in differences),
+        "tied": sum(d == 0 for d in differences),
+        "online_worse": sum(d < 0 for d in differences),
     }
 
 
-def run_benchmark(seeds: list[int] | None = None, steps: int = 2000) -> dict[str, Any]:
+def run_condition(seed: int, train_steps: int, eval_repeats_per_pair: int, learning: bool) -> dict[str, Any]:
+    agent = AwakeningAgent(seed=seed)
+    if not learning:
+        agent.learning_rate = 0.0
+
+    train_records = []
+    remaining = train_steps
+    while remaining:
+        batch = min(100, remaining)
+        train_records.extend(agent.run(batch))
+        remaining -= batch
+
+    # Balanced evaluation set: each of the four XOR combinations occurs equally.
+    eval_pairs = [
+        (a, b)
+        for a in (0, 1)
+        for b in (0, 1)
+        for _ in range(eval_repeats_per_pair)
+    ]
+    random.Random(100_000 + seed).shuffle(eval_pairs)
+
+    eval_records = [
+        agent.step(input_pair=pair, learn=False, explore=False)
+        for pair in eval_pairs
+    ]
+    combo_metrics = {}
+    for a, b in ((0, 0), (0, 1), (1, 0), (1, 1)):
+        rows = [r for r in eval_records if r["input_a"] == a and r["input_b"] == b]
+        combo_metrics[f"{a}{b}"] = round(sum(r["greedy_correct"] for r in rows) / len(rows), 4)
+
+    return {
+        "seed": seed,
+        "condition": "online_readout_update" if learning else "frozen_readout_control",
+        "train_steps": len(train_records),
+        "train_greedy_accuracy": round(sum(r["greedy_correct"] for r in train_records) / len(train_records), 4),
+        "evaluation_trials": len(eval_records),
+        "heldout_greedy_accuracy": round(sum(r["greedy_correct"] for r in eval_records) / len(eval_records), 4),
+        "heldout_accuracy_by_input_pair": combo_metrics,
+        "mean_eval_spikes_per_step": round(sum(r["spike_count"] for r in eval_records) / len(eval_records), 4),
+        "non_finite_resets": agent.fault_count,
+        "all_states_finite": all(r["finite_state"] for r in train_records + eval_records),
+    }
+
+
+def run_benchmark(seeds: list[int] | None = None, train_steps: int = 1500, eval_repeats_per_pair: int = 125) -> dict[str, Any]:
     seeds = list(range(1, 31)) if seeds is None else seeds
     results = [
-        run_condition(seed, steps, learning)
+        run_condition(seed, train_steps, eval_repeats_per_pair, learning)
         for seed in seeds
         for learning in (True, False)
     ]
-    by_condition = {
-        condition: [r for r in results if r["condition"] == condition]
-        for condition in ("online_readout_update", "frozen_readout_control")
-    }
+    online = {r["seed"]: r for r in results if r["condition"] == "online_readout_update"}
+    frozen = {r["seed"]: r for r in results if r["condition"] == "frozen_readout_control"}
+    online_rows = list(online.values())
+    frozen_rows = list(frozen.values())
+    diffs = [
+        online[s]["heldout_greedy_accuracy"] - frozen[s]["heldout_greedy_accuracy"]
+        for s in seeds
+    ]
     summary = {}
-    for condition, rows in by_condition.items():
-        summary[condition] = {
-            "mean_overall_action_accuracy": round(statistics.mean(r["overall_action_accuracy"] for r in rows), 4),
-            "mean_overall_greedy_accuracy": round(statistics.mean(r["overall_greedy_accuracy"] for r in rows), 4),
-            "mean_final_window_action_accuracy": round(statistics.mean(r["final_window_action_accuracy"] for r in rows), 4),
-            "mean_final_window_greedy_accuracy": round(statistics.mean(r["final_window_greedy_accuracy"] for r in rows), 4),
-            "mean_observed_exploration_rate": round(statistics.mean(r["exploration_rate_observed"] for r in rows), 4),
-            "mean_spikes_per_step": round(statistics.mean(r["mean_spikes_per_step"] for r in rows), 4),
+    for name, rows in (("online_readout_update", online_rows), ("frozen_readout_control", frozen_rows)):
+        summary[name] = {
+            "mean_train_greedy_accuracy": round(statistics.mean(r["train_greedy_accuracy"] for r in rows), 4),
+            "mean_heldout_greedy_accuracy": round(statistics.mean(r["heldout_greedy_accuracy"] for r in rows), 4),
             "finite_runs": sum(r["all_states_finite"] for r in rows),
             "runs": len(rows),
         }
-
-    online = {r["seed"]: r for r in by_condition["online_readout_update"]}
-    frozen = {r["seed"]: r for r in by_condition["frozen_readout_control"]}
-    overall_diffs = [
-        online[s]["overall_greedy_accuracy"] - frozen[s]["overall_greedy_accuracy"]
-        for s in seeds
-    ]
-    final_diffs = [
-        online[s]["final_window_greedy_accuracy"] - frozen[s]["final_window_greedy_accuracy"]
-        for s in seeds
-    ]
     return {
-        "experiment": "awakening_paired_online_learning_vs_frozen_control",
-        "task": "online XOR; target withheld from observation features",
-        "steps_per_run": steps,
+        "experiment": "awakening_online_training_balanced_heldout_xor",
+        "training": "random online XOR stream; target withheld from observation features",
+        "evaluation": "balanced shuffled XOR pairs; learning disabled; random exploration disabled",
+        "train_steps_per_run": train_steps,
+        "evaluation_trials_per_run": 4 * eval_repeats_per_pair,
         "seeds": seeds,
         "chance_accuracy_reference": 0.5,
-        "primary_metric": "greedy accuracy (argmax prediction, excluding random exploratory actions)",
         "summary": summary,
-        "paired_overall_greedy_accuracy_difference": paired_stats(overall_diffs),
-        "paired_final_window_greedy_accuracy_difference": paired_stats(final_diffs),
+        "paired_heldout_greedy_accuracy_difference": mean_ci(diffs),
         "interpretation_guidance": (
-            "A positive paired difference with a confidence interval above zero and a repeatable "
-            "advantage across seeds supports a learning effect on this toy task. This does not "
-            "demonstrate English acquisition, general intelligence, autonomy, or consciousness. "
-            "The confidence interval is a normal-approximation interval, not an exact small-sample test."
+            "A positive paired held-out advantage supports transfer of the learned readout to a balanced "
+            "evaluation set on this XOR task. The evaluation shares the agent's ongoing internal state, "
+            "so this is not a fully independent reset-state generalization test. This does not establish "
+            "English acquisition, general intelligence, autonomy, or consciousness. Confidence intervals "
+            "use a normal approximation."
         ),
         "runs": results,
     }
