@@ -139,15 +139,20 @@ def run_mlp_baseline(seed: int, train_steps: int, eval_repeats_per_pair: int) ->
         torch.manual_seed(seed + 50_000)
         model = nn.Sequential(nn.Linear(7, 16), nn.Tanh(), nn.Linear(16, 2))
         optimizer = torch.optim.Adam(model.parameters(), lr=0.02)
-        rng = random.Random(seed + 70_000)
+        # Positive control: train on the complete four-example truth table.
+        # This intentionally verifies the task/evaluation pipeline, not sample
+        # efficiency. A balanced full truth table prevents a weak baseline from
+        # being mistaken for evidence that the benchmark itself is broken.
+        train_pairs = list(PAIRS)
+        x_train = torch.tensor(
+            [observation(a, b) for a, b in train_pairs], dtype=torch.float32
+        )
+        y_train = torch.tensor([a ^ b for a, b in train_pairs], dtype=torch.long)
+        epochs = max(100, train_steps // 4)
         model.train()
-        for start in range(0, train_steps, 32):
-            batch_size = min(32, train_steps - start)
-            pairs = [(rng.randint(0, 1), rng.randint(0, 1)) for _ in range(batch_size)]
-            x = torch.tensor([observation(a, b) for a, b in pairs], dtype=torch.float32)
-            y = torch.tensor([a ^ b for a, b in pairs], dtype=torch.long)
+        for _ in range(epochs):
             optimizer.zero_grad()
-            loss = nn.functional.cross_entropy(model(x), y)
+            loss = nn.functional.cross_entropy(model(x_train), y_train)
             loss.backward()
             optimizer.step()
 
@@ -174,6 +179,7 @@ def run_mlp_baseline(seed: int, train_steps: int, eval_repeats_per_pair: int) ->
                 "seed": seed,
                 "condition": "nonlinear_mlp_sanity_baseline",
                 "train_steps": train_steps,
+                "positive_control_epochs": epochs,
                 "evaluation_trials": len(eval_pairs),
                 "heldout_greedy_accuracy": round(accuracy, 4),
                 "heldout_accuracy_by_input_pair": per_pair,
@@ -225,7 +231,7 @@ def run_benchmark(
         "experiment": "awakening_reset_state_generalization_xor_v2",
         "training": (
             "random online XOR stream for SNN; target withheld from stationary input features; "
-            "nonlinear MLP trained as a separate supervised sanity baseline"
+            "nonlinear MLP trained on the complete four-example XOR truth table as a positive control"
         ),
         "evaluation": (
             "balanced shuffled XOR pairs; SNN learning/exploration disabled; transient recurrent "
@@ -238,7 +244,7 @@ def run_benchmark(
         "summary": summary,
         "paired_snn_heldout_greedy_accuracy_difference": mean_ci(paired),
         "interpretation_guidance": (
-            "The MLP is a positive-control sanity baseline, not an equivalent SNN comparison. "
+            "The MLP is a positive-control sanity baseline trained on all four XOR input pairs, not an equivalent SNN comparison. "
             "If the MLP cannot learn XOR, inspect the benchmark pipeline. If MLP succeeds but the "
             "SNN fails, the SNN's fixed random representation/readout learning is the likely "
             "bottleneck. Paired SNN confidence intervals use a normal approximation. Results do "
