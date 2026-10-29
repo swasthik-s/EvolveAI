@@ -136,7 +136,7 @@ def run_snn_condition(
 def run_mlp_baseline(seed: int, train_steps: int, eval_repeats_per_pair: int) -> dict[str, Any]:
     """Train a tiny nonlinear supervised baseline as a task sanity check."""
     with torch.random.fork_rng(devices=[]):
-        torch.manual_seed(seed + 50_000)
+        torch.random.default_generator.manual_seed(seed + 50_000)
         model = nn.Sequential(nn.Linear(7, 16), nn.Tanh(), nn.Linear(16, 2))
         optimizer = torch.optim.Adam(model.parameters(), lr=0.02)
         # Positive control: train on the complete four-example truth table.
