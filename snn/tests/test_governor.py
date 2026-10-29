@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from governor import validate_dataset_manifest, load_state, save_state
+from autonomous_lab import propose_trials
 
 
 class GovernorTests(unittest.TestCase):
@@ -37,6 +38,16 @@ class GovernorTests(unittest.TestCase):
             }
             save_state(expected, path)
             self.assertEqual(load_state(path), expected)
+
+    def test_trial_search_adapts_around_previous_best(self):
+        trials = propose_trials(3, seed=99, previous_best={
+            "architecture": "evolve_context", "hidden_size": 64,
+            "learning_rate": 0.001, "validation_loss": 4.2,
+        })
+        self.assertEqual(len(trials), 3)
+        self.assertEqual(trials[0].architecture, "evolve_context")
+        self.assertEqual(trials[0].hidden_size, 64)
+        self.assertEqual(trials[0].seed, 99)
 
     def test_missing_state_starts_empty(self):
         with tempfile.TemporaryDirectory() as directory:
