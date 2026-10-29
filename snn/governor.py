@@ -98,6 +98,8 @@ def run_governed_cycle(
     if len(state["cycles"]) >= MAX_CYCLES:
         raise RuntimeError(f"Governor reached the {MAX_CYCLES}-cycle session history limit.")
     previous_best = state.get("best_validation_loss")
+    previous_best_trial = state.get("best_trial")
+    cycle_seed = int(seed) + len(state["cycles"]) * 1009
     final_checkpoint = Path(checkpoint_path)
     candidate_checkpoint = final_checkpoint.with_name(final_checkpoint.stem + "_candidate" + final_checkpoint.suffix)
     report = run_trials(
@@ -106,9 +108,10 @@ def run_governed_cycle(
         steps=int(steps),
         block_size=int(block_size),
         batch_size=int(batch_size),
-        seed=int(seed),
+        seed=cycle_seed,
         device=device,
         checkpoint_path=str(candidate_checkpoint),
+        previous_best=previous_best_trial,
     )
     best = report.get("best_trial")
     if best and (previous_best is None or best["validation_loss"] < previous_best) and candidate_checkpoint.exists():
@@ -120,6 +123,8 @@ def run_governed_cycle(
         report["checkpoint_path"] = str(final_checkpoint) if final_checkpoint.exists() else None
     report["governor"] = {
         "approved": True,
+        "search_strategy": report.get("search_strategy"),
+        "cycle_seed": cycle_seed,
         "dataset_id": manifest["dataset_id"],
         "corpus_sha256": manifest.get("corpus_sha256"),
         "corpus_limit_bytes": MAX_CORPUS_BYTES,
