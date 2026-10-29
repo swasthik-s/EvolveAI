@@ -8,6 +8,9 @@ from autonomous_lab import run_trials, export_json
 from awakening import AwakeningAgent, export_state_json
 import json
 import torch
+import uuid
+from pathlib import Path
+from governor import run_governed_cycle, load_state
 
 st.set_page_config(page_title="EvolveAI SNN Lab", page_icon="⚡", layout="wide")
 st.title("⚡ EvolveAI — Spiking Neural Network Lab")
@@ -132,6 +135,59 @@ st.download_button(
     key="aw_export",
 )
 st.caption("State remains in the current Streamlit session. Download the JSON and load it again after a session reset; cloud session memory is not guaranteed to persist.")
+
+st.subheader("🛡️ Governed Autonomous Learning")
+st.caption("Run a bounded learning cycle using only the fetched, allowlisted dataset. The governor verifies provenance and corpus hash, caps compute, and records experiment history.")
+if "governor_run_id" not in st.session_state:
+    st.session_state["governor_run_id"] = uuid.uuid4().hex
+governor_dir = Path("/tmp")
+governor_state_path = governor_dir / ("evolveai_governor_" + st.session_state["governor_run_id"] + ".json")
+governor_checkpoint_path = governor_dir / ("evolveai_best_" + st.session_state["governor_run_id"] + ".pt")
+governor_manifest = st.session_state.get("snn_corpus_manifest")
+governor_has_approved_data = bool(governor_manifest and corpus_source == "fetched dataset")
+state_upload = st.file_uploader("Resume governor history (JSON)", type=["json"], key="governor_state_upload")
+if state_upload is not None and st.button("Load governor history", key="governor_load_state"):
+    try:
+        uploaded_state = json.loads(state_upload.getvalue().decode("utf-8"))
+        if uploaded_state.get("state_version") != 1 or not isinstance(uploaded_state.get("cycles"), list):
+            raise ValueError("Unsupported governor-state format.")
+        governor_state_path.write_text(json.dumps(uploaded_state, indent=2), encoding="utf-8")
+        st.success("Governor history loaded for this session.")
+    except Exception as exc:
+        st.error("Could not load governor history: " + str(exc))
+gov_cols = st.columns(3)
+with gov_cols[0]:
+    gov_trials = st.slider("Governed trials", 1, 3, 2, key="gov_trials")
+with gov_cols[1]:
+    gov_steps = st.slider("Steps per governed trial", 10, 100, 40, 10, key="gov_steps")
+with gov_cols[2]:
+    gov_seed = st.number_input("Governor seed", min_value=0, max_value=999999, value=42, key="gov_seed")
+if not governor_has_approved_data:
+    st.info("Fetch the approved TinyStories dataset above before running a governed cycle. Uploaded or built-in text is not accepted by this internet-data governor.")
+if st.button("Run governed learning cycle", type="primary", disabled=not governor_has_approved_data, key="run_governed_cycle"):
+    try:
+        with st.spinner("Governor checking provenance and running bounded experiments…"):
+            gov_report = run_governed_cycle(
+                corpus=corpus, manifest=governor_manifest, state_path=governor_state_path,
+                checkpoint_path=governor_checkpoint_path, max_trials=int(gov_trials),
+                steps=int(gov_steps), block_size=min(int(block_size), 32),
+                batch_size=min(int(batch_size), 8), seed=int(gov_seed), device="auto",
+            )
+        st.session_state["snn_governed_result"] = gov_report
+        st.success("Governed cycle " + str(gov_report["governor"]["cycle_number"]) + " completed on " + str(gov_report.get("device_used")) + ".")
+    except Exception as exc:
+        st.error("Governed cycle failed or was blocked: " + str(exc))
+gov_report = st.session_state.get("snn_governed_result")
+if gov_report:
+    if gov_report.get("best_trial"):
+        st.metric("Governed best validation loss", f"{gov_report['best_trial']['validation_loss']:.3f}")
+    st.json(gov_report.get("governor", {}))
+    st.download_button("Download governed experiment report", data=json.dumps(gov_report, indent=2), file_name="evolveai_governed_report.json", mime="application/json", key="gov_report_download")
+if governor_state_path.exists():
+    state_bytes = governor_state_path.read_bytes()
+    st.download_button("Download persistent governor history", data=state_bytes, file_name="evolveai_governor_state.json", mime="application/json", key="gov_state_download")
+if governor_checkpoint_path.exists():
+    st.download_button("Download best governed checkpoint", data=governor_checkpoint_path.read_bytes(), file_name="evolveai_best_snn_checkpoint.pt", mime="application/octet-stream", key="gov_checkpoint_download")
 
 st.subheader("Autonomous Experiment Lab")
 st.caption("Run a bounded trial-and-error search. It varies reviewed model settings, records failures, and ranks runs by validation loss.")
