@@ -1,14 +1,15 @@
 """Bounded trial-and-error controller for EvolveAI SNN experiments.
 
-The controller only varies allowlisted configurations, uses a fixed corpus and
-seed policy, records every outcome, and ranks trials by validation loss. This is
-automated experimentation, not proof of better language quality.
+Only reviewed configurations are proposed. Runs can use CUDA when available,
+and optional checkpoints preserve the best model state for later evaluation.
 """
 from __future__ import annotations
 import json
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
+from pathlib import Path
+import torch
 from train import train
 
 
@@ -35,13 +36,17 @@ def propose_trials(max_trials: int = 4, seed: int = 42) -> list[TrialConfig]:
 
 def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
                block_size: int = 32, batch_size: int = 4, seed: int = 42,
-               progress=None) -> dict:
+               progress=None, device: str = "auto",
+               checkpoint_path: str | None = None) -> dict:
     if len(corpus.encode("utf-8")) < 100:
         raise ValueError("Corpus must contain at least 100 UTF-8 bytes.")
     if not 1 <= steps <= 300:
         raise ValueError("steps must be between 1 and 300.")
+    if not 1 <= max_trials <= 6:
+        raise ValueError("max_trials must be between 1 and 6.")
     configs = propose_trials(max_trials, seed)
     records = []
+    best_loss = float("inf")
     started = time.time()
     for index, config in enumerate(configs, start=1):
         trial_start = time.time()
@@ -50,7 +55,7 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
                 corpus, steps=steps, block_size=block_size, batch_size=batch_size,
                 hidden_size=config.hidden_size, embedding_dim=24,
                 learning_rate=config.learning_rate, seed=config.seed,
-                architecture=config.architecture,
+                architecture=config.architecture, device=device,
             )
             final = result["history"][-1]
             record = {
@@ -62,8 +67,23 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
                 "validation_loss": final["val_loss"],
                 "validation_perplexity": final["val_perplexity"],
                 "elapsed_seconds": round(time.time() - trial_start, 3),
+                "device": result["device"],
                 "config": result["config"],
             }
+            if checkpoint_path and record["validation_loss"] < best_loss:
+                best_loss = record["validation_loss"]
+                path = Path(checkpoint_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                torch.save({
+                    "state_dict": {k: v.detach().cpu() for k, v in result["model"].state_dict().items()},
+                    "config": result["config"],
+                    "validation_loss": record["validation_loss"],
+                    "trial": index,
+                    "created_at_utc": datetime.now(timezone.utc).isoformat(),
+                }, path)
+                record["best_checkpoint_saved"] = True
+            else:
+                best_loss = min(best_loss, record["validation_loss"])
         except Exception as exc:
             record = {
                 **asdict(config), "trial": index, "status": "failed",
@@ -79,16 +99,20 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "objective": "minimize final validation byte-level cross-entropy",
         "corpus_bytes": len(corpus.encode("utf-8")),
+        "device_requested": device,
+        "device_used": next((r.get("device") for r in completed), None),
         "trials_requested": len(configs),
         "trials_completed": len(completed),
         "elapsed_seconds": round(time.time() - started, 3),
         "best_trial": ranked[0] if ranked else None,
+        "checkpoint_path": checkpoint_path if checkpoint_path and ranked else None,
         "leaderboard": ranked,
         "all_trials": records,
         "limitations": [
-            "One seed and short runs are only a screening experiment.",
-            "Lower validation loss does not prove coherent dialogue or reasoning.",
-            "Use multiple seeds and an untouched test set before selecting a production model.",
+            "Short runs and a single seed are screening experiments, not a robust model selection protocol.",
+            "Lower validation loss does not prove coherent dialogue, reasoning, consciousness, or general intelligence.",
+            "Use multiple seeds and an untouched test set before selecting a model.",
+            "The current candidate list is fixed and does not invent new learning rules.",
         ],
     }
 
