@@ -346,9 +346,10 @@ def run_benchmark(
         "paired_snn_heldout_greedy_accuracy_difference": mean_ci(paired),
         "interpretation_guidance": (
             "The MLP is a positive-control sanity baseline; the end-to-end SNN updates cell and readout with surrogate-gradient BPTT. "
-            "If the MLP cannot learn XOR, inspect the benchmark pipeline. If MLP succeeds but the "
-            "SNN fails, the SNN's fixed random representation/readout learning is the likely "
-            "bottleneck. Paired SNN confidence intervals use a normal approximation. Results do "
+            "If the MLP cannot learn XOR, inspect the benchmark pipeline. If the end-to-end SNN "
+            "succeeds but online Awakening fails, readout-only online learning is the bottleneck. "
+            "If only the MLP succeeds, inspect spiking-cell gradients, firing activity and "
+            "optimization. Paired SNN confidence intervals use a normal approximation. Results do "
             "not establish English acquisition, general intelligence, autonomy, or consciousness."
         ),
         "runs": results,
