@@ -14,7 +14,7 @@ import torch
 
 from evolve_cell import EvolveSpikingContextCell
 
-STATE_VERSION = 2
+STATE_VERSION = 3
 
 
 class AwakeningAgent:
@@ -23,21 +23,24 @@ class AwakeningAgent:
     def __init__(self, seed: int = 42, state: dict[str, Any] | None = None):
         self.seed = int(seed)
         self.rng = random.Random(self.seed)
-        torch.manual_seed(self.seed)
-        self.cell = EvolveSpikingContextCell(
-            input_size=7, hidden_size=32, threshold=0.45,
-            leak_fast=0.55, leak_slow=0.90, adaptation_rate=0.01,
-        )
-        # Conservative initialization helps avoid runaway recurrent currents.
-        with torch.no_grad():
-            for p in self.cell.parameters():
-                p.clamp_(-0.15, 0.15)
-            self.cell.recurrent_current.weight.mul_(0.25)
-            self.cell.slow_context.weight.mul_(0.10)
-        self.readout = torch.nn.Linear(32, 2)
-        with torch.no_grad():
-            self.readout.weight.mul_(0.1)
-            self.readout.bias.zero_()
+        # Isolate initialization from PyTorch's process-global RNG so creating an
+        # agent cannot silently change randomness in the host app or other models.
+        with torch.random.fork_rng(devices=[]):
+            torch.manual_seed(self.seed)
+            self.cell = EvolveSpikingContextCell(
+                input_size=7, hidden_size=32, threshold=0.45,
+                leak_fast=0.55, leak_slow=0.90, adaptation_rate=0.01,
+            )
+            # Conservative initialization helps avoid runaway recurrent currents.
+            with torch.no_grad():
+                for p in self.cell.parameters():
+                    p.clamp_(-0.15, 0.15)
+                self.cell.recurrent_current.weight.mul_(0.25)
+                self.cell.slow_context.weight.mul_(0.10)
+            self.readout = torch.nn.Linear(32, 2)
+            with torch.no_grad():
+                self.readout.weight.mul_(0.1)
+                self.readout.bias.zero_()
         self.learning_rate = 0.03
         self.step_count = 0
         self.last_observation = [0.0] * 7
@@ -56,15 +59,11 @@ class AwakeningAgent:
             self.load_state(state)
 
     def _observation(self, a: int, b: int) -> list[float]:
-        # Crucially, XOR target is not present in the observation.
-        return [
-            float(a), float(b),
-            min(1.0, self.step_count / 100.0),
-            max(-1.0, min(1.0, self.last_reward)),
-            self.last_surprise,
-            float((self.step_count % 2)),
-            self.rng.random() * 0.02,
-        ]
+        # Keep the task observation stationary across training and reset-state
+        # evaluation. Time, previous reward, surprise, parity and random noise
+        # created a train/evaluation distribution shift and accidental shortcuts.
+        # The XOR target is not included; unused dimensions remain zero.
+        return [float(a), float(b), 0.0, 0.0, 0.0, 0.0, 0.0]
 
     def _reset_dynamics(self) -> None:
         self.fast.zero_()
@@ -193,7 +192,7 @@ class AwakeningAgent:
 
     def load_state(self, state: dict[str, Any]) -> None:
         if state.get("state_version") != STATE_VERSION:
-            raise ValueError("This state file uses an older format. Reset the agent or export a new version-2 state.")
+            raise ValueError("This state file uses an older format. Reset the agent or export a new version-3 state.")
         self.seed = int(state.get("seed", self.seed))
         self.step_count = int(state.get("step_count", 0))
         self.last_observation = list(state.get("last_observation", [0.0] * 7))
