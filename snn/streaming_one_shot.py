@@ -51,9 +51,9 @@ def run_streaming_one_shot(
             f"best_step={record['best_step']} "
             f"stale={record['stale_evaluations']}/{patience}"
         )
-        print(f"[GATEKEEPER] latest={record['latest_source']} "
-              f"domain={record['latest_domain']} "
-              f"sample={record['latest_sample']!r}")
+        print(f"[SNN INPUT] batch_sources={record['batch_sources']} "
+              f"domains={record['batch_domains']} "
+              f"sample={record['batch_sample_preview']!r}")
         status = record["gatekeeper"]
         print(f"[GATEKEEPER] admitted={status['records_admitted']} "
               f"rejected={status['records_rejected']} "
