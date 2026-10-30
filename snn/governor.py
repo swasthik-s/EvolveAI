@@ -28,7 +28,7 @@ MAX_TRIALS_PER_CYCLE = 6
 MAX_STEPS_PER_TRIAL = 300
 MAX_CYCLES = 20
 STATE_VERSION = 1
-VALIDATION_PROTOCOL = "deterministic evenly-spaced validation windows v2"
+VALIDATION_PROTOCOL = "deterministic evenly-spaced validation windows v3"
 
 
 def validate_dataset_manifest(manifest: dict[str, Any]) -> None:
