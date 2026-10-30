@@ -15,8 +15,8 @@ class SelfDirectedPlannerTests(unittest.TestCase):
     def test_improving_history_refines_historical_champion(self):
         state = {
             "cycles": [
-                {"best_validation_loss": 3.5},
-                {"best_validation_loss": 3.2},
+                {"best_validation_loss": 3.5, "validation_protocol": "deterministic evenly-spaced validation windows v3"},
+                {"best_validation_loss": 3.2, "validation_protocol": "deterministic evenly-spaced validation windows v3"},
             ],
             "best_validation_loss": 3.2,
             "best_trial": {
@@ -33,8 +33,8 @@ class SelfDirectedPlannerTests(unittest.TestCase):
     def test_plateau_triggers_exploration(self):
         state = {
             "cycles": [
-                {"best_validation_loss": 3.2},
-                {"best_validation_loss": 3.2},
+                {"best_validation_loss": 3.2, "validation_protocol": "deterministic evenly-spaced validation windows v3"},
+                {"best_validation_loss": 3.2, "validation_protocol": "deterministic evenly-spaced validation windows v3"},
             ],
             "best_validation_loss": 3.2,
             "best_trial": {
