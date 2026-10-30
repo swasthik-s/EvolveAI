@@ -6,7 +6,6 @@ fetch arbitrary URLs, or alter its own safety policy.
 """
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import Any
 
 
