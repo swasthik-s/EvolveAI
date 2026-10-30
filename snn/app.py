@@ -157,7 +157,7 @@ if state_upload is not None and st.button("Load governor history", key="governor
         st.error("Could not load governor history: " + str(exc))
 gov_cols = st.columns(3)
 with gov_cols[0]:
-    gov_trials = st.slider("Governed trials", 1, 3, 2, key="gov_trials")
+    gov_trials = st.slider("Governed trials", 1, 6, 4, key="gov_trials")
 with gov_cols[1]:
     gov_steps = st.slider("Steps per governed trial", 10, 100, 40, 10, key="gov_steps")
 with gov_cols[2]:
