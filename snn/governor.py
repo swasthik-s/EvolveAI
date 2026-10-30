@@ -114,7 +114,7 @@ def run_governed_cycle(
         state["cycles"]
         and state["cycles"][-1].get("corpus_sha256") == manifest.get("corpus_sha256")
     )
-    warm_start_path = str(final_checkpoint) if same_corpus_as_previous and final_checkpoint.is_file() else None
+    warm_start_path = (str(final_checkpoint) if same_corpus_as_previous and final_checkpoint.is_file()\n                       and not validation_protocol_migrated else None)
     candidate_checkpoint = final_checkpoint.with_name(final_checkpoint.stem + "_candidate" + final_checkpoint.suffix)
     learning_plan = create_learning_plan(state, max_trials=int(max_trials), seed=cycle_seed)
     report = run_trials(
@@ -145,7 +145,7 @@ def run_governed_cycle(
         "search_strategy": report.get("search_strategy"),
         "cycle_seed": cycle_seed,
         "warm_start_enabled": warm_start_path is not None,
-        "warm_start_note": "Compatible candidates continue from the prior best checkpoint only when the corpus hash is unchanged.",
+        "warm_start_note": "Warm starts require an unchanged corpus and validation protocol; a protocol migration starts fresh to prevent split leakage.",
         "dataset_id": manifest["dataset_id"],
         "corpus_sha256": manifest.get("corpus_sha256"),
         "corpus_limit_bytes": MAX_CORPUS_BYTES,
