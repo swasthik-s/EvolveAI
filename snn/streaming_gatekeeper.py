@@ -117,11 +117,9 @@ class StreamingGatekeeper:
     def _next_raw(self):
         if not self.source_order:
             raise StopIteration
-        checked = 0
-        while checked < len(self.source_order):
+        while self.source_order:
             sid = self.source_order[self.source_cursor % len(self.source_order)]
             self.source_cursor = (self.source_cursor + 1) % len(self.source_order)
-            checked += 1
             try:
                 row = next(self.iterators[sid])
                 return sid, row
