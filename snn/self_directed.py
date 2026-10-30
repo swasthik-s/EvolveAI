@@ -10,7 +10,8 @@ from typing import Any
 
 
 ALLOWED_ARCHITECTURES = ("baseline", "evolve_context")
-ALLOWED_HIDDEN_SIZES = (32, 64, 96, 128)\nVALIDATION_PROTOCOL = "deterministic evenly-spaced validation windows v3"
+ALLOWED_HIDDEN_SIZES = (32, 64, 96, 128)
+VALIDATION_PROTOCOL = "deterministic evenly-spaced validation windows v3"
 
 
 def _best_config(state: dict[str, Any]) -> dict[str, Any]:
@@ -30,7 +31,8 @@ def create_learning_plan(state: dict[str, Any], max_trials: int = 4,
     losses = [
         float(item["best_validation_loss"])
         for item in cycles
-        if item.get("best_validation_loss") is not None\n        and item.get("validation_protocol") == VALIDATION_PROTOCOL
+        if item.get("best_validation_loss") is not None
+        and item.get("validation_protocol") == VALIDATION_PROTOCOL
     ]
     current_best = state.get("best_validation_loss")
     stale_cycles = 0
