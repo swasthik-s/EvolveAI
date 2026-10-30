@@ -181,6 +181,14 @@ gov_report = st.session_state.get("snn_governed_result")
 if gov_report:
     if gov_report.get("best_trial"):
         st.metric("Governed best validation loss", f"{gov_report['best_trial']['validation_loss']:.3f}")
+    plan = gov_report.get("learning_plan", {})
+    if plan:
+        st.markdown("#### EvolveAI's current learning agenda")
+        st.markdown(f"**Focus:** {plan.get('focus', 'not recorded')}  \n**Objective:** {plan.get('objective', '')}")
+        st.info("Hypothesis: " + plan.get("hypothesis", "No hypothesis recorded."))
+        st.caption("Why this agenda: " + plan.get("rationale", ""))
+        if plan.get("proposed_experiments"):
+            st.dataframe(pd.DataFrame(plan["proposed_experiments"]), use_container_width=True, hide_index=True)
     st.json(gov_report.get("governor", {}))
     st.download_button("Download governed experiment report", data=json.dumps(gov_report, indent=2), file_name="evolveai_governed_report.json", mime="application/json", key="gov_report_download")
 if governor_state_path.exists():
