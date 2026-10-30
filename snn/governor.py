@@ -28,6 +28,7 @@ MAX_TRIALS_PER_CYCLE = 6
 MAX_STEPS_PER_TRIAL = 300
 MAX_CYCLES = 20
 STATE_VERSION = 1
+VALIDATION_PROTOCOL = "deterministic evenly-spaced validation windows v2"
 
 
 def validate_dataset_manifest(manifest: dict[str, Any]) -> None:
@@ -96,6 +97,13 @@ def run_governed_cycle(
         raise ValueError("Governor permits batch sizes from 1 to 32.")
 
     state = load_state(state_path)
+    validation_protocol_migrated = state.get("validation_protocol") != VALIDATION_PROTOCOL
+    if validation_protocol_migrated:
+        # Cycle 1 used randomly sampled validation windows. Keep its checkpoint
+        # and champion configuration for warm-starting, but establish a new
+        # comparable score baseline under deterministic protocol v2.
+        state["best_validation_loss"] = None
+        state["validation_protocol"] = VALIDATION_PROTOCOL
     if len(state["cycles"]) >= MAX_CYCLES:
         raise RuntimeError(f"Governor reached the {MAX_CYCLES}-cycle session history limit.")
     previous_best = state.get("best_validation_loss")
@@ -131,6 +139,7 @@ def run_governed_cycle(
             candidate_checkpoint.unlink()
         report["checkpoint_path"] = str(final_checkpoint) if final_checkpoint.exists() else None
     report["learning_plan"] = learning_plan
+    report["validation_protocol_migrated"] = validation_protocol_migrated
     report["governor"] = {
         "approved": True,
         "search_strategy": report.get("search_strategy"),
@@ -167,6 +176,7 @@ def run_governed_cycle(
         "elapsed_seconds": report["elapsed_seconds"],
         "checkpoint_path": report.get("checkpoint_path"),
     })
+    state["validation_protocol"] = VALIDATION_PROTOCOL
     state["updated_at_utc"] = datetime.now(timezone.utc).isoformat()
     save_state(state, state_path)
     report["governor"]["cycle_number"] = len(state["cycles"])
