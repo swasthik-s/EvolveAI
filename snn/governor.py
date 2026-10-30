@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from autonomous_lab import run_trials
+from self_directed import create_learning_plan
 
 ALLOWED_DATASETS = {
     "roneneldan/TinyStories": {
@@ -107,6 +108,7 @@ def run_governed_cycle(
     )
     warm_start_path = str(final_checkpoint) if same_corpus_as_previous and final_checkpoint.is_file() else None
     candidate_checkpoint = final_checkpoint.with_name(final_checkpoint.stem + "_candidate" + final_checkpoint.suffix)
+    learning_plan = create_learning_plan(state, max_trials=int(max_trials), seed=cycle_seed)
     report = run_trials(
         corpus=corpus,
         max_trials=int(max_trials),
@@ -118,6 +120,7 @@ def run_governed_cycle(
         checkpoint_path=str(candidate_checkpoint),
         previous_best=previous_best_trial,
         warm_start_checkpoint=warm_start_path,
+        proposed_configs=learning_plan["proposed_experiments"],
     )
     best = report.get("best_trial")
     if best and (previous_best is None or best["validation_loss"] < previous_best) and candidate_checkpoint.exists():
@@ -127,6 +130,7 @@ def run_governed_cycle(
         if candidate_checkpoint.exists():
             candidate_checkpoint.unlink()
         report["checkpoint_path"] = str(final_checkpoint) if final_checkpoint.exists() else None
+    report["learning_plan"] = learning_plan
     report["governor"] = {
         "approved": True,
         "search_strategy": report.get("search_strategy"),
@@ -143,6 +147,15 @@ def run_governed_cycle(
     if best and (previous_best is None or best["validation_loss"] < previous_best):
         state["best_validation_loss"] = best["validation_loss"]
         state["best_trial"] = best
+    state.setdefault("learning_agenda", []).append({
+        "cycle": len(state["cycles"]) + 1,
+        "focus": learning_plan["focus"],
+        "objective": learning_plan["objective"],
+        "hypothesis": learning_plan["hypothesis"],
+        "rationale": learning_plan["rationale"],
+        "proposed_experiments": learning_plan["proposed_experiments"],
+        "selected_best": best,
+    })
     state["cycles"].append({
         "cycle": len(state["cycles"]) + 1,
         "created_at_utc": report["created_at_utc"],
