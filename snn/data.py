@@ -24,6 +24,22 @@ def split_tokens(tokens: torch.Tensor, train_fraction: float = 0.9):
     return tokens[:boundary], tokens[boundary:]
 
 
+def split_three_way(tokens: torch.Tensor, train_fraction: float = 0.8,
+                    validation_fraction: float = 0.1):
+    """Chronologically reserve train, validation, and final test segments."""
+    if not 0.5 <= train_fraction < 0.9:
+        raise ValueError("train_fraction must be in [0.5, 0.9)")
+    if not 0.05 <= validation_fraction < 0.25:
+        raise ValueError("validation_fraction must be in [0.05, 0.25)")
+    if train_fraction + validation_fraction >= 1.0:
+        raise ValueError("A non-empty test fraction must remain.")
+    if tokens.numel() < 100:
+        raise ValueError("Corpus must contain at least 100 UTF-8 bytes.")
+    train_end = int(tokens.numel() * train_fraction)
+    validation_end = int(tokens.numel() * (train_fraction + validation_fraction))
+    return tokens[:train_end], tokens[train_end:validation_end], tokens[validation_end:]
+
+
 def get_batch(tokens: torch.Tensor, batch_size: int, block_size: int, device="cpu"):
     if tokens.numel() < 2:
         raise ValueError("Need at least two tokens to form a next-token batch")
