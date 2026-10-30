@@ -174,6 +174,7 @@ def run_governed_cycle(
         "corpus_sha256": manifest.get("corpus_sha256"),
         "trials_completed": report["trials_completed"],
         "best_validation_loss": best["validation_loss"] if best else None,
+        "validation_protocol": VALIDATION_PROTOCOL,
         "device_used": report.get("device_used"),
         "elapsed_seconds": report["elapsed_seconds"],
         "checkpoint_path": report.get("checkpoint_path"),
