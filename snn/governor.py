@@ -114,7 +114,8 @@ def run_governed_cycle(
         state["cycles"]
         and state["cycles"][-1].get("corpus_sha256") == manifest.get("corpus_sha256")
     )
-    warm_start_path = (str(final_checkpoint) if same_corpus_as_previous and final_checkpoint.is_file()\n                       and not validation_protocol_migrated else None)
+    warm_start_path = (str(final_checkpoint) if same_corpus_as_previous and final_checkpoint.is_file()
+                       and not validation_protocol_migrated else None)
     candidate_checkpoint = final_checkpoint.with_name(final_checkpoint.stem + "_candidate" + final_checkpoint.suffix)
     learning_plan = create_learning_plan(state, max_trials=int(max_trials), seed=cycle_seed)
     report = run_trials(
