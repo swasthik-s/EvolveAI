@@ -21,16 +21,28 @@ def resolve_device(device="auto"):
 
 
 def evaluate(model, tokens, block_size, batch_size=8, batches=8, device="cpu"):
+    """Evaluate on fixed, evenly spaced windows for repeatable model comparisons."""
     model.eval()
+    needed = block_size + 1
+    if tokens.numel() < needed:
+        repeats = (needed - 1 + tokens.numel() - 1) // tokens.numel()
+        tokens = tokens.repeat(repeats)
+    max_start = tokens.numel() - needed
+    count = max(1, int(batches) * int(batch_size))
+    starts = torch.linspace(0, max_start, steps=count).round().long().unique()
     losses = []
     with torch.no_grad():
-        for _ in range(batches):
-            x, y = get_batch(tokens, batch_size, block_size, device)
+        for offset in range(0, starts.numel(), max(1, int(batch_size))):
+            windows = starts[offset:offset + max(1, int(batch_size))]
+            x = torch.stack([tokens[int(i):int(i) + block_size] for i in windows]).to(device)
+            y = torch.stack([tokens[int(i) + 1:int(i) + block_size + 1] for i in windows]).to(device)
             logits = model(x)
             losses.append(F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1)).item())
     model.train()
     mean_loss = sum(losses) / len(losses)
-    return {"loss": mean_loss, "perplexity": math.exp(min(mean_loss, 20.0))}
+    return {"loss": mean_loss, "perplexity": math.exp(min(mean_loss, 20.0)),
+            "protocol": "deterministic evenly-spaced validation windows v2",
+            "validation_windows": int(starts.numel())}
 
 
 def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
