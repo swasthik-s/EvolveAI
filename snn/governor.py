@@ -163,6 +163,8 @@ def run_governed_cycle(
         "hypothesis": learning_plan["hypothesis"],
         "rationale": learning_plan["rationale"],
         "proposed_experiments": learning_plan["proposed_experiments"],
+        "all_trials": report.get("all_trials", []),
+        "leaderboard": report.get("leaderboard", []),
         "selected_best": best,
     })
     state["cycles"].append({
