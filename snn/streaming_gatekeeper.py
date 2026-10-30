@@ -92,6 +92,7 @@ class StreamingGatekeeper:
         self.total_admitted = 0
         self.total_rejected = 0
         self.last_admitted: StreamRecord | None = None
+        self.last_batch_records: list[StreamRecord] = []
         self.progress = progress
         self._load_streams()
 
@@ -210,6 +211,8 @@ class StreamingGatekeeper:
         if not pool:
             raise RuntimeError("Gatekeeper buffer is empty.")
         chosen = [self.rng.choice(list(pool)) for _ in range(batch_size)]
+        if not validation:
+            self.last_batch_records = chosen
         xs, ys = [], []
         for record in chosen:
             tokens = self._tokens(record)
