@@ -112,13 +112,17 @@ def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
 
 
 def evaluate_holdout_checkpoint(text: str, checkpoint_path: str, expected_sha256: str,
+                                confirm_independent_corpus: bool = False,
                                 device="auto", batches=16, batch_size=8):
-    """One-time final audit of a frozen checkpoint on the untouched final corpus segment.
+    """One-time audit of a frozen checkpoint on a genuinely independent corpus.
 
-    Do not use this score to tune candidates. Freeze model selection using validation first.
+    The confirmation is mandatory because a chronological tail may have been exposed
+    during earlier experiments. Never use this score to tune candidates.
     """
     import hashlib
     from pathlib import Path
+    if not confirm_independent_corpus:
+        raise ValueError("Holdout evaluation requires explicit confirmation that this corpus is independent of all prior training and validation data.")
     actual_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
     if not expected_sha256 or actual_hash != expected_sha256:
         raise ValueError("Holdout evaluation blocked: corpus hash does not match the supplied manifest.")
