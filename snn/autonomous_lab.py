@@ -60,14 +60,29 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
                progress=None, device: str = "auto",
                checkpoint_path: str | None = None,
                previous_best: dict | None = None,
-               warm_start_checkpoint: str | None = None) -> dict:
+               warm_start_checkpoint: str | None = None,
+               proposed_configs: list[dict] | None = None) -> dict:
     if len(corpus.encode("utf-8")) < 100:
         raise ValueError("Corpus must contain at least 100 UTF-8 bytes.")
     if not 1 <= steps <= 300:
         raise ValueError("steps must be between 1 and 300.")
     if not 1 <= max_trials <= 6:
         raise ValueError("max_trials must be between 1 and 6.")
-    configs = propose_trials(max_trials, seed, previous_best)
+    if proposed_configs:
+        configs = []
+        for item in proposed_configs[:max_trials]:
+            architecture = item.get("architecture")
+            hidden_size = int(item.get("hidden_size", 64))
+            learning_rate = float(item.get("learning_rate", 0.001))
+            if architecture not in {"baseline", "evolve_context"}:
+                raise ValueError("Self-directed planner proposed an unapproved architecture.")
+            if hidden_size not in {32, 64, 96, 128} or not 0.0001 <= learning_rate <= 0.005:
+                raise ValueError("Self-directed planner proposed settings outside governor policy.")
+            configs.append(TrialConfig(architecture, hidden_size, learning_rate, int(item.get("seed", seed))))
+        if not configs:
+            raise ValueError("Self-directed planner did not produce any valid experiments.")
+    else:
+        configs = propose_trials(max_trials, seed, previous_best)
     records = []
     best_loss = float("inf")
     started = time.time()
@@ -138,7 +153,8 @@ def run_trials(corpus: str, max_trials: int = 4, steps: int = 40,
     return {
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "objective": "minimize final validation byte-level cross-entropy",
-        "search_strategy": "adaptive neighborhood around historical best" if previous_best else "initial reviewed configuration search",
+        "search_strategy": "history-driven self-directed experiment agenda" if proposed_configs else ("adaptive neighborhood around historical best" if previous_best else "initial reviewed configuration search"),
+        "validation_protocol": "deterministic evenly-spaced validation windows v2",
         "previous_best_validation_loss": previous_best.get("validation_loss") if previous_best else None,
         "warm_start_checkpoint": warm_start_checkpoint,
         "corpus_bytes": len(corpus.encode("utf-8")),
