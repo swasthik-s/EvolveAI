@@ -132,7 +132,7 @@ def run_governed_cycle(
         "search_strategy": report.get("search_strategy"),
         "cycle_seed": cycle_seed,
         "warm_start_enabled": warm_start_path is not None,
-        "warm_start_note": "Compatible candidates continue from the prior best checkpoint only when the corpus hash is unchanged."
+        "warm_start_note": "Compatible candidates continue from the prior best checkpoint only when the corpus hash is unchanged.",
         "dataset_id": manifest["dataset_id"],
         "corpus_sha256": manifest.get("corpus_sha256"),
         "corpus_limit_bytes": MAX_CORPUS_BYTES,
