@@ -181,6 +181,8 @@ gov_report = st.session_state.get("snn_governed_result")
 if gov_report:
     if gov_report.get("best_trial"):
         st.metric("Governed best validation loss", f"{gov_report['best_trial']['validation_loss']:.3f}")
+    if gov_report.get("validation_protocol_migrated"):
+        st.warning("Validation protocol changed from the previous cycle. EvolveAI retained the prior checkpoint but is establishing a new comparable validation baseline.")
     plan = gov_report.get("learning_plan", {})
     if plan:
         st.markdown("#### EvolveAI's current learning agenda")
