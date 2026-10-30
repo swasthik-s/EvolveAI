@@ -82,14 +82,16 @@ def train_streaming(
                 stale = 0
             else:
                 stale += 1
-            source = gatekeeper.last_admitted
+            batch_records = gatekeeper.last_batch_records
+            batch_sources = sorted({item.source_id for item in batch_records})
+            sample_record = batch_records[0] if batch_records else None
             record = {
                 "step": step, "max_steps": steps, "train_loss": last_train_loss,
                 "validation_loss": val["loss"], "validation_perplexity": val["perplexity"],
                 "improved": improved, "best_step": best_step, "stale_evaluations": stale,
-                "latest_source": source.source_id if source else None,
-                "latest_domain": source.domain if source else None,
-                "latest_sample": source.text[:180] if source else None,
+                "batch_sources": batch_sources,
+                "batch_domains": sorted({item.domain for item in batch_records}),
+                "batch_sample_preview": sample_record.text[:180] if sample_record else None,
                 "gatekeeper": gatekeeper.status(),
             }
             history.append(record)
