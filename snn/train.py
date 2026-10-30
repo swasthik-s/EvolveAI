@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 from model import RecurrentLIFLanguageModel
 from evolve_cell import EvolveContextSNNLanguageModel
-from data import encode, split_tokens, get_batch
+from data import encode, split_three_way, get_batch
 
 
 def resolve_device(device="auto"):
@@ -20,8 +20,9 @@ def resolve_device(device="auto"):
     return str(resolved)
 
 
-def evaluate(model, tokens, block_size, batch_size=8, batches=8, device="cpu"):
-    """Evaluate on fixed, evenly spaced windows for repeatable model comparisons."""
+def evaluate(model, tokens, block_size, batch_size=8, batches=8, device="cpu",
+             split_name="validation"):
+    """Evaluate on fixed, evenly spaced windows for repeatable comparisons."""
     model.eval()
     needed = block_size + 1
     if tokens.numel() < needed:
@@ -41,8 +42,23 @@ def evaluate(model, tokens, block_size, batch_size=8, batches=8, device="cpu"):
     model.train()
     mean_loss = sum(losses) / len(losses)
     return {"loss": mean_loss, "perplexity": math.exp(min(mean_loss, 20.0)),
-            "protocol": "deterministic evenly-spaced validation windows v2",
-            "validation_windows": int(starts.numel())}
+            "protocol": f"deterministic evenly-spaced {split_name} windows v3",
+            "windows": int(starts.numel())}
+
+
+def build_model(config):
+    architecture = config.get("architecture", "baseline")
+    if architecture == "evolve_context":
+        model = EvolveContextSNNLanguageModel(
+            embedding_dim=int(config.get("embedding_dim", 24)),
+            hidden_size=int(config["hidden_size"]))
+    elif architecture == "baseline":
+        model = RecurrentLIFLanguageModel(
+            embedding_dim=int(config.get("embedding_dim", 24)),
+            hidden_size=int(config["hidden_size"]))
+    else:
+        raise ValueError("Unsupported checkpoint architecture.")
+    return model
 
 
 def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
@@ -56,7 +72,7 @@ def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
     if device.startswith("cuda"):
         torch.cuda.manual_seed_all(seed)
     tokens = encode(text)
-    train_tokens, val_tokens = split_tokens(tokens)
+    train_tokens, val_tokens, test_tokens = split_three_way(tokens)
     if architecture == "evolve_context":
         model = EvolveContextSNNLanguageModel(embedding_dim=embedding_dim, hidden_size=hidden_size)
     elif architecture == "baseline":
@@ -80,16 +96,54 @@ def train(text: str, steps=100, block_size=48, batch_size=8, hidden_size=96,
         optimizer.step()
         if step == 1 or step % max(1, steps // 10) == 0 or step == steps:
             val = evaluate(model, val_tokens, block_size, batch_size=min(batch_size, 8),
-                           batches=3, device=device)
+                           batches=3, device=device, split_name="validation")
             record = {"step": step, "train_loss": float(loss.item()),
                       "val_loss": val["loss"], "val_perplexity": val["perplexity"]}
             history.append(record)
             if progress:
                 progress(step, steps, record)
     return {"model": model, "history": history, "train_bytes": int(train_tokens.numel()),
-            "validation_bytes": int(val_tokens.numel()), "elapsed_seconds": time.time() - started,
-            "device": device,
+            "validation_bytes": int(val_tokens.numel()), "test_bytes": int(test_tokens.numel()),
+            "elapsed_seconds": time.time() - started, "device": device,
             "config": {"steps": steps, "block_size": block_size, "batch_size": batch_size,
                        "hidden_size": hidden_size, "embedding_dim": embedding_dim,
                        "architecture": architecture, "learning_rate": learning_rate,
                        "seed": seed, "device": device}}
+
+
+def evaluate_holdout_checkpoint(text: str, checkpoint_path: str, expected_sha256: str,
+                                device="auto", batches=16, batch_size=8):
+    """One-time final audit of a frozen checkpoint on the untouched final corpus segment.
+
+    Do not use this score to tune candidates. Freeze model selection using validation first.
+    """
+    import hashlib
+    from pathlib import Path
+    actual_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if not expected_sha256 or actual_hash != expected_sha256:
+        raise ValueError("Holdout evaluation blocked: corpus hash does not match the supplied manifest.")
+    path = Path(checkpoint_path)
+    if not path.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {path}")
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+    config = payload.get("config", {})
+    model = build_model(config)
+    model.load_state_dict(payload["state_dict"], strict=True)
+    resolved = resolve_device(device)
+    model = model.to(resolved)
+    tokens = encode(text)
+    _, _, test_tokens = split_three_way(tokens)
+    result = evaluate(model, test_tokens, int(config.get("block_size", 32)),
+                      batch_size=batch_size, batches=batches, device=resolved,
+                      split_name="untouched test")
+    return {
+        "evaluation_type": "final holdout audit; do not use for model selection",
+        "corpus_sha256": actual_hash,
+        "checkpoint_path": str(path),
+        "checkpoint_config": config,
+        "test_bytes": int(test_tokens.numel()),
+        "test_loss": result["loss"],
+        "test_perplexity": result["perplexity"],
+        "protocol": result["protocol"],
+        "device": resolved,
+    }
