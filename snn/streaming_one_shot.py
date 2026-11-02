@@ -6,6 +6,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 import torch
+from brain.memory import EpisodicMemory
+from brain.learning_director import LearningDirector
 
 from streaming_gatekeeper import StreamingGatekeeper, SOURCE_REGISTRY
 from streaming_train import train_streaming
@@ -35,12 +37,38 @@ def run_streaming_one_shot(
     output.mkdir(parents=True, exist_ok=True)
     report_path = output / "streaming_one_shot_report.json"
     checkpoint_path = output / "streaming_one_shot_checkpoint.pt"
+    latest_path = output / "streaming_one_shot_latest.pt"
+    memory_path = output / "episodic_memory.jsonl"
 
     print("\n[EVOLVEAI] ONE-SHOT MULTI-SOURCE STREAMING TRAINING")
     print("[EVOLVEAI] No complete corpus download; bounded in-memory buffers only.")
     started = time.time()
     gatekeeper = StreamingGatekeeper(source_ids, seed=seed)
     gatekeeper.warm_buffers()
+    memory = EpisodicMemory(memory_path)
+    director = LearningDirector(seed=seed, memory=memory)
+    print(f"[MEMORY] loaded_events={len(memory.events)} path={memory_path}")
+    print("[DIRECTOR] curiosity policy=learning-progress + uncertainty + coverage; exploration floor=20%")
+
+    def save_checkpoint(record, state_dict):
+        payload = {
+            "state_dict": {k: v.detach().cpu() for k, v in state_dict.items()},
+            "config": {"architecture": architecture, "hidden_size": hidden_size,
+                       "embedding_dim": embedding_dim, "block_size": block_size},
+            "best_validation_loss": record["validation_loss"] if record["improved"] else None,
+            "step": record["step"], "best_step": record["best_step"],
+            "sources": record["gatekeeper"]["sources"],
+            "saved_at_utc": datetime.now(timezone.utc).isoformat(),
+        }
+        # Latest recoverable state is written at every evaluation interval.
+        tmp_latest = latest_path.with_suffix(".pt.tmp")
+        torch.save(payload, tmp_latest)
+        tmp_latest.replace(latest_path)
+        if record["improved"]:
+            tmp_best = checkpoint_path.with_suffix(".pt.tmp")
+            torch.save(payload, tmp_best)
+            tmp_best.replace(checkpoint_path)
+        print(f"[CHECKPOINT] latest saved at step={record['step']}; best_step={record['best_step']}")
 
     def progress(record):
         print(
@@ -67,7 +95,8 @@ def run_streaming_one_shot(
         hidden_size=hidden_size, embedding_dim=embedding_dim,
         learning_rate=learning_rate, seed=seed, architecture=architecture,
         device=device, eval_interval=eval_interval, patience=patience,
-        min_delta=min_delta, progress=progress,
+        min_delta=min_delta, progress=progress, memory=memory, director=director,
+        checkpoint_callback=save_checkpoint,
     )
     checkpoint = {
         "state_dict": {k: v.detach().cpu() for k, v in result["model"].state_dict().items()},
@@ -92,6 +121,8 @@ def run_streaming_one_shot(
         "best_validation_loss": result["best_validation_loss"],
         "training_history": result["history"],
         "gatekeeper": result["gatekeeper"],
+        "episodic_memory": {"path": str(memory_path), "events": len(memory.events), "domains": memory.domain_summary()},
+        "learning_director": {"decisions": director.decisions, "policy": "learning progress + uncertainty + coverage with 20% exploration floor"},
         "sources": {
             sid: {"dataset": SOURCE_REGISTRY[sid]["path"],
                   "url": SOURCE_REGISTRY[sid]["url"],
@@ -117,5 +148,7 @@ def run_streaming_one_shot(
           f"best_val_loss={report['best_validation_loss']:.4f} "
           f"elapsed={report['elapsed_seconds']}s")
     print(f"[EVOLVEAI] report={report_path}")
-    print(f"[EVOLVEAI] checkpoint={checkpoint_path}")
+    print(f"[EVOLVEAI] best_checkpoint={checkpoint_path}")
+    print(f"[EVOLVEAI] latest_recovery_checkpoint={latest_path}")
+    print(f"[EVOLVEAI] episodic_memory={memory_path}")
     return report
