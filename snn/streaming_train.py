@@ -39,6 +39,9 @@ def train_streaming(
     patience=5,
     min_delta=0.002,
     progress=None,
+    memory=None,
+    director=None,
+    checkpoint_callback=None,
 ):
     if steps < 1 or eval_interval < 1 or patience < 1:
         raise ValueError("steps, eval_interval and patience must be positive.")
@@ -93,10 +96,15 @@ def train_streaming(
                 "batch_domains": sorted({item.domain for item in batch_records}),
                 "batch_sample_preview": sample_record.text[:180] if sample_record else None,
                 "gatekeeper": gatekeeper.status(),
+                "selected_domain": selected_domain,
+                "domain_weights": domain_weights,
+                "memory_domains": memory.domain_summary() if memory else {},
             }
             history.append(record)
             if progress:
                 progress(record)
+            if checkpoint_callback:
+                checkpoint_callback(record, best_state if best_state is not None else model.state_dict())
             if stale >= patience:
                 break
 
@@ -108,6 +116,7 @@ def train_streaming(
         "stopped_early": bool(history and history[-1]["step"] < steps),
         "elapsed_seconds": time.time() - started, "device": device,
         "gatekeeper": gatekeeper.status(),
+        "memory_domains": memory.domain_summary() if memory else {},
         "config": {"steps_requested": steps, "block_size": block_size,
                    "batch_size": batch_size, "hidden_size": hidden_size,
                    "embedding_dim": embedding_dim, "learning_rate": learning_rate,
