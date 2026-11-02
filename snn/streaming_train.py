@@ -110,7 +110,7 @@ def train_streaming(
             if progress:
                 progress(record)
             if checkpoint_callback:
-                checkpoint_callback(record, best_state if best_state is not None else model.state_dict())
+                checkpoint_callback(record, model.state_dict(), best_state if best_state is not None else model.state_dict())
             if stale >= patience:
                 break
 
