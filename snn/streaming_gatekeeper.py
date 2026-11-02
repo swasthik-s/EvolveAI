@@ -210,7 +210,9 @@ class StreamingGatekeeper:
         pool = self.validation_buffer if validation else self.train_buffer
         if not pool:
             raise RuntimeError("Gatekeeper buffer is empty.")
-        candidates = [r for r in pool if preferred_domain is None or r.domain == preferred_domain]\n        if not candidates:\n            candidates = list(pool)\n        chosen = [self.rng.choice(candidates) for _ in range(batch_size)]
+        candidates = [r for r in pool if preferred_domain is None or r.domain == preferred_domain]
+        if not candidates:
+            candidates = list(pool)\n        chosen = [self.rng.choice(candidates) for _ in range(batch_size)]
         if not validation:
             self.last_batch_records = chosen
         xs, ys = [], []
