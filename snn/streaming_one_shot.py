@@ -50,9 +50,9 @@ def run_streaming_one_shot(
     print(f"[MEMORY] loaded_events={len(memory.events)} path={memory_path}")
     print("[DIRECTOR] curiosity policy=learning-progress + uncertainty + coverage; exploration floor=20%")
 
-    def save_checkpoint(record, state_dict):
+    def save_checkpoint(record, current_state_dict, best_state_dict):
         payload = {
-            "state_dict": {k: v.detach().cpu() for k, v in state_dict.items()},
+            "state_dict": {k: v.detach().cpu() for k, v in current_state_dict.items()},
             "config": {"architecture": architecture, "hidden_size": hidden_size,
                        "embedding_dim": embedding_dim, "block_size": block_size},
             "best_validation_loss": record["validation_loss"] if record["improved"] else None,
@@ -65,8 +65,11 @@ def run_streaming_one_shot(
         torch.save(payload, tmp_latest)
         tmp_latest.replace(latest_path)
         if record["improved"]:
+            best_payload = dict(payload)
+            best_payload["state_dict"] = {k: v.detach().cpu() for k, v in best_state_dict.items()}
+            best_payload["best_validation_loss"] = record["validation_loss"]
             tmp_best = checkpoint_path.with_suffix(".pt.tmp")
-            torch.save(payload, tmp_best)
+            torch.save(best_payload, tmp_best)
             tmp_best.replace(checkpoint_path)
         print(f"[CHECKPOINT] latest saved at step={record['step']}; best_step={record['best_step']}")
 
