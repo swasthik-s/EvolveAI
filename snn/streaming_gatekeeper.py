@@ -206,11 +206,11 @@ class StreamingGatekeeper:
     def _tokens(record: StreamRecord) -> torch.Tensor:
         return torch.tensor(list(record.text.encode("utf-8")), dtype=torch.long)
 
-    def make_batch(self, batch_size: int, block_size: int, device: str, validation=False):
+    def make_batch(self, batch_size: int, block_size: int, device: str, validation=False, preferred_domain=None):
         pool = self.validation_buffer if validation else self.train_buffer
         if not pool:
             raise RuntimeError("Gatekeeper buffer is empty.")
-        chosen = [self.rng.choice(list(pool)) for _ in range(batch_size)]
+        candidates = [r for r in pool if preferred_domain is None or r.domain == preferred_domain]\n        if not candidates:\n            candidates = list(pool)\n        chosen = [self.rng.choice(candidates) for _ in range(batch_size)]
         if not validation:
             self.last_batch_records = chosen
         xs, ys = [], []
