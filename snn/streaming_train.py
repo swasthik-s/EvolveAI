@@ -66,14 +66,20 @@ def train_streaming(
     for step in range(1, steps + 1):
         # Refill from all live sources while keeping memory bounded.
         gatekeeper.ingest(records=4)
-        selected_domain, domain_weights = director.choose_domain(sorted({r.domain for r in gatekeeper.train_buffer})) if director else (None, {})\n        x, y = gatekeeper.make_batch(batch_size, block_size, device, preferred_domain=selected_domain)
+        selected_domain, domain_weights = director.choose_domain(sorted({r.domain for r in gatekeeper.train_buffer})) if director else (None, {})
+        x, y = gatekeeper.make_batch(batch_size, block_size, device, preferred_domain=selected_domain)
         logits = model(x)
         loss = F.cross_entropy(logits.reshape(-1, logits.size(-1)), y.reshape(-1))
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
-        last_train_loss = float(loss.item())\n        batch_records = list(gatekeeper.last_batch_records)\n        if memory:\n            memory.record_batch(step, last_train_loss, batch_records, {"selected_domain": selected_domain})\n        if director and selected_domain:\n            director.curiosity.observe(selected_domain, last_train_loss)
+        last_train_loss = float(loss.item())
+        batch_records = list(gatekeeper.last_batch_records)
+        if memory:
+            memory.record_batch(step, last_train_loss, batch_records, {"selected_domain": selected_domain})
+        if director and selected_domain:
+            director.curiosity.observe(selected_domain, last_train_loss)
 
         if step % eval_interval == 0 or step == 1 or step == steps:
             val = _evaluate_stream(model, gatekeeper, block_size, min(batch_size, 8), device)
