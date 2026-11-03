@@ -43,7 +43,7 @@ def _clean_phrase(value: str) -> str:
 
 def extract_from_sentence(sentence: str):
     # Preserve terminal punctuation because this string is stored as source evidence.
-    sentence = re.sub(r"\\s+", " ", sentence).strip()
+    sentence = re.sub(r"\s+", " ", sentence).strip()
     entities = set()
     for pattern in (CAPITALIZED_PHRASE, ACRONYM):
         for match in pattern.findall(sentence):
