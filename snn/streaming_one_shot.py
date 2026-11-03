@@ -29,6 +29,7 @@ def run_streaming_one_shot(
     eval_interval=100,
     patience=5,
     min_delta=0.002,
+    resume_checkpoint_path=None,
 ):
     source_ids = source_ids or ["tinystories", "wikitext", "ag_news", "gsm8k"]
     if device == "cuda" and not torch.cuda.is_available():
@@ -47,6 +48,21 @@ def run_streaming_one_shot(
     gatekeeper.warm_buffers()
     memory = EpisodicMemory(memory_path)
     director = LearningDirector(seed=seed, memory=memory)
+    initial_state_dict = None
+    warm_started_from = None
+    if resume_checkpoint_path:
+        resume_path = Path(resume_checkpoint_path)
+        if not resume_path.is_file():
+            raise FileNotFoundError(f"Warm-start checkpoint not found: {resume_path}")
+        saved = torch.load(resume_path, map_location="cpu", weights_only=True)
+        saved_config = saved.get("config", {})
+        expected = {"architecture": architecture, "hidden_size": hidden_size, "embedding_dim": embedding_dim}
+        mismatches = {k: (saved_config.get(k), v) for k, v in expected.items() if saved_config.get(k) != v}
+        if mismatches:
+            raise ValueError(f"Checkpoint/model configuration mismatch: {mismatches}")
+        initial_state_dict = saved["state_dict"]
+        warm_started_from = str(resume_path)
+        print(f"[MODEL] warm-start checkpoint loaded: {warm_started_from}")
     print(f"[MEMORY] loaded_events={len(memory.events)} path={memory_path}")
     print("[DIRECTOR] curiosity policy=learning-progress + uncertainty + coverage; exploration floor=20%")
 
@@ -99,7 +115,7 @@ def run_streaming_one_shot(
         learning_rate=learning_rate, seed=seed, architecture=architecture,
         device=device, eval_interval=eval_interval, patience=patience,
         min_delta=min_delta, progress=progress, memory=memory, director=director,
-        checkpoint_callback=save_checkpoint,
+        checkpoint_callback=save_checkpoint, initial_state_dict=initial_state_dict,
     )
     checkpoint = {
         "state_dict": {k: v.detach().cpu() for k, v in result["model"].state_dict().items()},
@@ -118,6 +134,7 @@ def run_streaming_one_shot(
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
         "device": result["device"],
         "training_config": result["config"],
+        "warm_started_from": warm_started_from,
         "steps_completed": result["steps_completed"],
         "stopped_early": result["stopped_early"],
         "best_step": result["best_step"],
@@ -125,7 +142,7 @@ def run_streaming_one_shot(
         "training_history": result["history"],
         "gatekeeper": result["gatekeeper"],
         "episodic_memory": {"path": str(memory_path), "events": len(memory.events), "domains": memory.domain_summary()},
-        "learning_director": {"decisions": director.decisions, "policy": "learning progress + uncertainty + coverage with 20% exploration floor"},
+        "learning_director": {"decisions": director.decisions, "policy": "learning progress + uncertainty + coverage with 20% exploration floor; summaries every 100 decisions"},
         "sources": {
             sid: {"dataset": SOURCE_REGISTRY[sid]["path"],
                   "url": SOURCE_REGISTRY[sid]["url"],
