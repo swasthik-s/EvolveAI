@@ -40,8 +40,7 @@ RELATION_PATTERNS = [
     ("located_in", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+(?:located|found)\s+in\s+(?P<object>{NP})")),
     ("used_for", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+used\s+for\s+(?P<object>{NP})")),
     ("consists_of", re.compile(rf"\b{SUBJECT}\s+(?:consists?\s+of|comprises?)\s+(?P<object>{NP})")),
-    ("is_a", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+(?:a|an)\s+(?P<object>{NP})")),
-]
+    # Generic "is a" classification is disabled: it matched opinions, existential\n    # constructions and truncated prose as if they were facts.\n]
 
 
 def _key(*parts: str) -> str:
