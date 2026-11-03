@@ -29,7 +29,7 @@ class EvidenceExtractorTests(unittest.TestCase):
                     "text": "Photosynthesis is a biological process in plants.",
                     "domain": "science",
                     "source_ids": ["sample-7"],
-                }) + "\\n",
+                }) + "\n",
                 encoding="utf-8",
             )
             report = run_extraction(root)
