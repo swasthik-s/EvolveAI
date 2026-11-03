@@ -73,18 +73,21 @@ def train_streaming(
         torch.backends.cudnn.allow_tf32 = True
         torch.set_float32_matmul_precision("high")
 
-    # Prefer BF16 where the GPU supports it; T4 falls back to FP16.
+    # Select native Tensor Core precision by compute capability.
+    # Turing T4 (7.5) has FP16 Tensor Cores, but no native BF16 Tensor Cores.
     amp_dtype = None
     scaler = None
     if device.startswith("cuda"):
-        amp_dtype = (
-            torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
-        )
+        capability = torch.cuda.get_device_capability(0)
+        native_bf16 = capability[0] >= 8 and torch.cuda.is_bf16_supported()
+        amp_dtype = torch.bfloat16 if native_bf16 else torch.float16
         scaler = torch.cuda.amp.GradScaler(
             enabled=(amp_dtype == torch.float16)
         )
         print(
             f"[GPU] name={torch.cuda.get_device_name(0)} "
+            f"compute_capability={capability[0]}.{capability[1]} "
+            f"native_bf16={native_bf16} "
             f"amp={str(amp_dtype).replace('torch.', '')} "
             f"total_vram_gib={torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f}"
         )
