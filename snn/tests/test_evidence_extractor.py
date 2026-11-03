@@ -13,7 +13,7 @@ class EvidenceExtractorTests(unittest.TestCase):
         relation = next(r for r in relations if r["relation_candidate"] == "is_a")
         self.assertEqual(relation["evidence_sentence"], sentence)
         self.assertEqual(relation["subject"], "Photosynthesis")
-        self.assertEqual(relation["object"], "biological process in")
+        self.assertEqual(relation["object"], "biological process")
 
     def test_rejects_existential_and_question_fragments(self):
         samples = [
@@ -50,7 +50,7 @@ class EvidenceExtractorTests(unittest.TestCase):
                     "text": "Photosynthesis is a biological process in plants.",
                     "domain": "science",
                     "source_ids": ["sample-7"],
-                }) + "\\n",
+                }) + "\n",
                 encoding="utf-8",
             )
             report = run_extraction(root)
