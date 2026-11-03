@@ -11,10 +11,10 @@ import re
 from collections import Counter
 from pathlib import Path
 
-SENTENCE_RE = re.compile(r"(?<=[.!?])\\s+")
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 TOKEN = r"[A-Za-z][A-Za-z0-9'-]*"
-CAPITALIZED_PHRASE = re.compile(r"\\b(?:[A-Z][a-zA-Z0-9'-]*)(?:\\s+(?:[A-Z][a-zA-Z0-9'-]*|of|the|and|for)){1,5}\\b")
-ACRONYM = re.compile(r"\\b[A-Z]{2,}(?:-[A-Z0-9]+)*\\b")
+CAPITALIZED_PHRASE = re.compile(r"\b(?:[A-Z][a-zA-Z0-9'-]*)(?:\s+(?:[A-Z][a-zA-Z0-9'-]*|of|the|and|for)){1,5}\b")
+ACRONYM = re.compile(r"\b[A-Z]{2,}(?:-[A-Z0-9]+)*\b")
 GENERIC = {
     "once", "time", "little", "boy", "girl", "she", "he", "they", "her",
     "his", "mom", "dad", "went", "loved", "liked", "asked", "wanted",
@@ -24,21 +24,21 @@ GENERIC = {
 
 # Only explicit linguistic patterns produce relation candidates.
 RELATION_PATTERNS = [
-    ("is_a", re.compile(rf"\\b({TOKEN}(?:\\s+{TOKEN}){{0,3}})\\s+(?:is|are)\\s+(?:a|an|the)\\s+({TOKEN}(?:\\s+{TOKEN}){{0,3}})", re.I)),
-    ("part_of", re.compile(rf"\\b({TOKEN}(?:\\s+{TOKEN}){{0,3}})\\s+(?:is|are)\\s+part\\s+of\\s+({TOKEN}(?:\\s+{TOKEN}){{0,3}})", re.I)),
-    ("causes", re.compile(rf"\\b({TOKEN}(?:\\s+{TOKEN}){{0,3}})\\s+(?:causes?|leads\\s+to)\\s+({TOKEN}(?:\\s+{TOKEN}){{0,3}})", re.I)),
-    ("located_in", re.compile(rf"\\b({TOKEN}(?:\\s+{TOKEN}){{0,3}})\\s+(?:is|are)\\s+(?:located|found)\\s+in\\s+({TOKEN}(?:\\s+{TOKEN}){{0,3}})", re.I)),
-    ("used_for", re.compile(rf"\\b({TOKEN}(?:\\s+{TOKEN}){{0,3}})\\s+(?:is|are)\\s+used\\s+for\\s+({TOKEN}(?:\\s+{TOKEN}){{0,3}})", re.I)),
-    ("consists_of", re.compile(rf"\\b({TOKEN}(?:\\s+{TOKEN}){{0,3}})\\s+(?:consists?\\s+of|comprises?)\\s+({TOKEN}(?:\\s+{TOKEN}){{0,3}})", re.I)),
+    ("is_a", re.compile(rf"\b({TOKEN}(?:\s+{TOKEN}){{0,3}})\s+(?:is|are)\s+(?:a|an|the)\s+({TOKEN}(?:\s+{TOKEN}){{0,3}})", re.I)),
+    ("part_of", re.compile(rf"\b({TOKEN}(?:\s+{TOKEN}){{0,3}})\s+(?:is|are)\s+part\s+of\s+({TOKEN}(?:\s+{TOKEN}){{0,3}})", re.I)),
+    ("causes", re.compile(rf"\b({TOKEN}(?:\s+{TOKEN}){{0,3}})\s+(?:causes?|leads\s+to)\s+({TOKEN}(?:\s+{TOKEN}){{0,3}})", re.I)),
+    ("located_in", re.compile(rf"\b({TOKEN}(?:\s+{TOKEN}){{0,3}})\s+(?:is|are)\s+(?:located|found)\s+in\s+({TOKEN}(?:\s+{TOKEN}){{0,3}})", re.I)),
+    ("used_for", re.compile(rf"\b({TOKEN}(?:\s+{TOKEN}){{0,3}})\s+(?:is|are)\s+used\s+for\s+({TOKEN}(?:\s+{TOKEN}){{0,3}})", re.I)),
+    ("consists_of", re.compile(rf"\b({TOKEN}(?:\s+{TOKEN}){{0,3}})\s+(?:consists?\s+of|comprises?)\s+({TOKEN}(?:\s+{TOKEN}){{0,3}})", re.I)),
 ]
 
 
 def _key(*parts: str) -> str:
-    return hashlib.sha256("\\0".join(parts).encode("utf-8")).hexdigest()
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
 def _clean_phrase(value: str) -> str:
-    return re.sub(r"\\s+", " ", value).strip(" \\t,.;:!?()[]{}")
+    return re.sub(r"\s+", " ", value).strip(" \t,.;:!?()[]{}")
 
 
 def extract_from_sentence(sentence: str):
@@ -121,7 +121,7 @@ def run_extraction(memory_directory, output_directory=None):
         tmp = path.with_suffix(path.suffix + ".tmp")
         with tmp.open("w", encoding="utf-8") as stream:
             for record in records.values():
-                stream.write(json.dumps(record, ensure_ascii=False) + "\\n")
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
         tmp.replace(path)
 
     report = {
