@@ -57,6 +57,7 @@ def train_streaming(
     memory=None,
     director=None,
     checkpoint_callback=None,
+    initial_state_dict=None,
 ):
     if steps < 1 or eval_interval < 1 or patience < 1:
         raise ValueError("steps, eval_interval and patience must be positive.")
@@ -95,6 +96,9 @@ def train_streaming(
         "hidden_size": hidden_size,
         "embedding_dim": embedding_dim,
     }).to(device)
+    if initial_state_dict is not None:
+        model.load_state_dict(initial_state_dict, strict=True)
+        print("[MODEL] warm-started from supplied checkpoint weights; optimizer state is freshly initialized.")
 
     try:
         optimizer = torch.optim.AdamW(
@@ -205,10 +209,14 @@ def train_streaming(
                 "tokens_seen": total_tokens_seen,
                 "tokens_per_second": round(total_tokens_seen / elapsed, 1),
                 "elapsed_seconds": round(elapsed, 2),
-                "gpu_peak_memory_gib": (
-                    round(torch.cuda.max_memory_allocated() / 1024**3, 2)
-                    if device.startswith("cuda") else None
-                ),
+                "gpu_memory": ({
+                    "allocated_gib": round(torch.cuda.memory_allocated() / 1024**3, 3),
+                    "reserved_gib": round(torch.cuda.memory_reserved() / 1024**3, 3),
+                    "peak_allocated_gib": round(torch.cuda.max_memory_allocated() / 1024**3, 3),
+                    "peak_reserved_gib": round(torch.cuda.max_memory_reserved() / 1024**3, 3),
+                    "total_gib": round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2),
+                } if device.startswith("cuda") else None),
+                "model_parameters": sum(p.numel() for p in model.parameters()),
                 "amp_dtype": str(amp_dtype) if amp_dtype else "disabled",
             }
             history.append(record)
