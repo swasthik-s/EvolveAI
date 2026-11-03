@@ -11,12 +11,12 @@ import re
 from collections import Counter
 from pathlib import Path
 
-SENTENCE_RE = re.compile(r"(?<=[.!?])\\s+")
+SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
 TOKEN = r"[A-Za-z][A-Za-z0-9'-]{1,}"
 CAPITALIZED_PHRASE = re.compile(
-    r"\\b[A-Z][a-zA-Z0-9'-]*(?:\\s+(?:[A-Z][a-zA-Z0-9'-]*|of|the|and|for)){0,4}\\b"
+    r"\b[A-Z][a-zA-Z0-9'-]*(?:\s+(?:[A-Z][a-zA-Z0-9'-]*|of|the|and|for)){0,4}\b"
 )
-ACRONYM = re.compile(r"\\b[A-Z]{2,}(?:-[A-Z0-9]+)*\\b")
+ACRONYM = re.compile(r"\b[A-Z]{2,}(?:-[A-Z0-9]+)*\b")
 GENERIC = {
     "once", "time", "little", "boy", "girl", "she", "he", "they", "her",
     "his", "mom", "dad", "went", "loved", "liked", "asked", "wanted",
@@ -32,29 +32,36 @@ BAD_SUBJECT_STARTS = {"there", "what", "when", "where", "who", "why", "how", "if
 BAD_OBJECT_ENDINGS = {"a", "an", "the", "of", "and", "or", "for", "to", "in", "on", "at", "by", "with"}
 
 # Conservative, bounded patterns. Specific relations precede the generic is_a rule.
-NP = rf"{TOKEN}(?:\\s+{TOKEN}){{0,2}}"
-SUBJECT = rf"(?P<subject>[A-Z][A-Za-z0-9'-]*(?:\\s+{TOKEN}){{0,2}})"
+NP = rf"{TOKEN}(?:\s+{TOKEN}){{0,2}}"
+SUBJECT = rf"(?P<subject>[A-Z][A-Za-z0-9'-]*(?:\s+{TOKEN}){{0,2}})"
 RELATION_PATTERNS = [
-    ("part_of", re.compile(rf"\\b{SUBJECT}\\s+(?:is|are)\\s+part\\s+of\\s+(?P<object>{NP})")),
-    ("causes", re.compile(rf"\\b{SUBJECT}\\s+(?:causes?|leads\\s+to)\\s+(?P<object>{NP})")),
-    ("located_in", re.compile(rf"\\b{SUBJECT}\\s+(?:is|are)\\s+(?:located|found)\\s+in\\s+(?P<object>{NP})")),
-    ("used_for", re.compile(rf"\\b{SUBJECT}\\s+(?:is|are)\\s+used\\s+for\\s+(?P<object>{NP})")),
-    ("consists_of", re.compile(rf"\\b{SUBJECT}\\s+(?:consists?\\s+of|comprises?)\\s+(?P<object>{NP})")),
-    ("is_a", re.compile(rf"\\b{SUBJECT}\\s+(?:is|are)\\s+(?:a|an)\\s+(?P<object>{NP})")),
+    ("part_of", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+part\s+of\s+(?P<object>{NP})")),
+    ("causes", re.compile(rf"\b{SUBJECT}\s+(?:causes?|leads\s+to)\s+(?P<object>{NP})")),
+    ("located_in", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+(?:located|found)\s+in\s+(?P<object>{NP})")),
+    ("used_for", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+used\s+for\s+(?P<object>{NP})")),
+    ("consists_of", re.compile(rf"\b{SUBJECT}\s+(?:consists?\s+of|comprises?)\s+(?P<object>{NP})")),
+    ("is_a", re.compile(rf"\b{SUBJECT}\s+(?:is|are)\s+(?:a|an)\s+(?P<object>{NP})")),
 ]
 
 
 def _key(*parts: str) -> str:
-    return hashlib.sha256("\\0".join(parts).encode("utf-8")).hexdigest()
+    return hashlib.sha256("\0".join(parts).encode("utf-8")).hexdigest()
 
 
 def _clean_phrase(value: str) -> str:
-    return re.sub(r"\\s+", " ", value).strip(" \\t,.;:!?()[]{}")
+    return re.sub(r"\s+", " ", value).strip(" \t,.;:!?()[]{}")
 
 
 def _valid_entity_phrase(phrase: str) -> bool:
     words = phrase.lower().split()
     return bool(words) and words[0] not in GENERIC and words[-1] not in BAD_PHRASE_ENDINGS
+
+
+def _trim_object(value: str) -> str:
+    words = value.split()
+    while words and words[-1].lower() in BAD_OBJECT_ENDINGS:
+        words.pop()
+    return " ".join(words)
 
 
 def _valid_relation(subject: str, obj: str, sentence: str) -> bool:
@@ -75,7 +82,7 @@ def _valid_relation(subject: str, obj: str, sentence: str) -> bool:
 
 def extract_from_sentence(sentence: str):
     # Preserve punctuation: evidence must be byte-for-byte faithful apart from whitespace.
-    sentence = re.sub(r"\\s+", " ", sentence).strip()
+    sentence = re.sub(r"\s+", " ", sentence).strip()
     entities = set()
     for pattern in (CAPITALIZED_PHRASE, ACRONYM):
         for match in pattern.findall(sentence):
@@ -87,7 +94,7 @@ def extract_from_sentence(sentence: str):
     for relation, pattern in RELATION_PATTERNS:
         for match in pattern.finditer(sentence):
             subject = _clean_phrase(match.group("subject"))
-            obj = _clean_phrase(match.group("object"))
+            obj = _trim_object(_clean_phrase(match.group("object")))
             if subject.lower() == obj.lower() or not _valid_relation(subject, obj, sentence):
                 continue
             relations.append({
@@ -152,7 +159,7 @@ def run_extraction(memory_directory, output_directory=None):
         tmp = path.with_suffix(path.suffix + ".tmp")
         with tmp.open("w", encoding="utf-8") as stream:
             for record in records.values():
-                stream.write(json.dumps(record, ensure_ascii=False) + "\\n")
+                stream.write(json.dumps(record, ensure_ascii=False) + "\n")
         tmp.replace(path)
 
     report = {
