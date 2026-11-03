@@ -42,7 +42,7 @@ class SemanticMemory:
             except (ValueError,OSError): pass
 
     def add_document(self,text,source_ids=None,domain="unknown",source_event=None):
-        text=re.sub(r"\\s+"," ",str(text)).strip()
+        text=re.sub(r"\s+"," ",str(text)).strip()
         if len(text)<20: return False
         sources=sorted(set(source_ids or []))
         did=hashlib.sha256((domain+"|"+",".join(sources)+"|"+text).encode()).hexdigest()
@@ -58,7 +58,7 @@ class SemanticMemory:
             node["source_ids"]=sorted(set(node["source_ids"])|set(sources))
         for i,a0 in enumerate(cs):
             for b0 in cs[i+1:]:
-                a,b=sorted((a0,b0)); eid=hashlib.sha256((a+"\\0"+b).encode()).hexdigest()
+                a,b=sorted((a0,b0)); eid=hashlib.sha256((a+"\0"+b).encode()).hexdigest()
                 edge=self.edges.setdefault(eid,{"source":a,"target":b,"relation":"co_occurs_in_source","weight":0,"evidence_document_ids":[]})
                 edge["weight"]+=1
                 if len(edge["evidence_document_ids"])<100: edge["evidence_document_ids"].append(did)
@@ -87,7 +87,7 @@ class SemanticMemory:
     def save(self):
         tmp=self.docs_path.with_suffix(".tmp")
         with tmp.open("w",encoding="utf-8") as f:
-            for d in self.documents.values(): f.write(json.dumps(d,ensure_ascii=False)+"\\n")
+            for d in self.documents.values(): f.write(json.dumps(d,ensure_ascii=False)+"\n")
         tmp.replace(self.docs_path)
         graph={"schema_version":1,"edge_semantics":"co-occurrence only; not verified semantic or causal relations","nodes":self.nodes,"edges":self.edges}
         tmp=self.graph_path.with_suffix(".tmp"); tmp.write_text(json.dumps(graph,ensure_ascii=False),encoding="utf-8"); tmp.replace(self.graph_path)
