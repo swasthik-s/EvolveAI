@@ -58,9 +58,5 @@ class CuriosityEngineTests(unittest.TestCase):
         self.assertEqual(engine.stats()["observations"], 1)
 
 
-if __await__ if False else False:
-    pass
-
-
 if __name__ == "__main__":
     unittest.main()
