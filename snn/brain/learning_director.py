@@ -22,6 +22,6 @@ class LearningDirector:
     def choose_domain(self, available_domains):
         domain, weights = self.curiosity.choose(available_domains, self.rng)
         self.decisions += 1
-        if domain:
+        if domain and (self.decisions == 1 or self.decisions % 100 == 0):
             print(f"[DIRECTOR] decision={self.decisions} selected={domain} weights={weights}")
         return domain, weights

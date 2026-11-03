@@ -89,6 +89,10 @@ class StreamingGatekeeper:
         self.seen = set()
         self.seen_order = deque(maxlen=50000)
         self.stats = {sid: Counter() for sid in self.source_order}
+        self.source_cycles = Counter()
+        self.source_restarts = Counter()
+        self.source_epoch_admitted = Counter()
+        self.source_empty_epochs = Counter()
         self.total_admitted = 0
         self.total_rejected = 0
         self.last_admitted: StreamRecord | None = None
@@ -115,21 +119,57 @@ class StreamingGatekeeper:
         if not self.source_order:
             raise RuntimeError(f"No data streams could be opened: {failures}")
 
+    def _restart_source(self, sid):
+        # Restart a finite HF stream after one complete pass. Clear the rolling
+        # dedupe window at the epoch boundary so legitimate replay is possible.
+        if self.source_epoch_admitted[sid] == 0:
+            self.source_empty_epochs[sid] += 1
+        else:
+            self.source_empty_epochs[sid] = 0
+        if self.source_empty_epochs[sid] >= 2:
+            self.iterators.pop(sid, None)
+            print(f"[GATEKEEPER] DISABLED | {sid} | two consecutive epochs admitted zero records")
+            return
+        self.source_cycles[sid] += 1
+        self.source_restarts[sid] += 1
+        self.source_epoch_admitted[sid] = 0
+        self.seen.clear()
+        self.seen_order.clear()
+        spec = SOURCE_REGISTRY[sid]
+        kwargs = {"path": spec["path"], "split": spec["split"], "streaming": True}
+        if spec["config"]:
+            kwargs["name"] = spec["config"]
+        try:
+            self.iterators[sid] = iter(load_dataset(**kwargs))
+            print(f"[GATEKEEPER] RECYCLED | {sid} | epoch={self.source_cycles[sid] + 1}")
+        except Exception as exc:
+            self.iterators.pop(sid, None)
+            print(f"[GATEKEEPER] RESTART_ERROR | {sid} | {type(exc).__name__}: {exc}")
+
     def _next_raw(self):
         if not self.source_order:
             raise StopIteration
-        while self.source_order:
+        attempts = 0
+        max_attempts = max(1, len(self.source_order) * 3)
+        while self.source_order and attempts < max_attempts:
             sid = self.source_order[self.source_cursor % len(self.source_order)]
             self.source_cursor = (self.source_cursor + 1) % len(self.source_order)
             try:
                 row = next(self.iterators[sid])
                 return sid, row
             except StopIteration:
-                self.iterators.pop(sid, None)
+                self._restart_source(sid)
                 self.source_order = [x for x in self.source_order if x in self.iterators]
                 if self.source_order:
                     self.source_cursor %= len(self.source_order)
-        raise StopIteration
+                attempts += 1
+        if not self.source_order:
+            raise StopIteration
+        # Some streams may have been disabled while others remain active.
+        sid = self.source_order[self.source_cursor % len(self.source_order)]
+        row = next(self.iterators[sid])
+        self.source_cursor = (self.source_cursor + 1) % len(self.source_order)
+        return sid, row
 
     def _extract(self, sid, row):
         spec = SOURCE_REGISTRY[sid]
@@ -175,9 +215,14 @@ class StreamingGatekeeper:
             if record is None:
                 continue
             # Deterministic online split: 1 in 20 admitted records goes to validation.
-            bucket = self.validation_buffer if self.total_admitted % 20 == 0 else self.train_buffer
+            # Stable content-hash split: a repeated record always remains in the
+            # same partition, preventing train/validation leakage across epochs.
+            digest = hashlib.sha256(record.text.casefold().encode('utf-8')).digest()
+            is_validation = int.from_bytes(digest[:4], 'big') % 20 == 0
+            bucket = self.validation_buffer if is_validation else self.train_buffer
             bucket.append(record)
             self.total_admitted += 1
+            self.source_epoch_admitted[sid] += 1
             self.stats[sid]["admitted"] += 1
             self.last_admitted = record
             admitted += 1
@@ -239,5 +284,7 @@ class StreamingGatekeeper:
             "train_buffer_records": len(self.train_buffer),
             "validation_buffer_records": len(self.validation_buffer),
             "active_sources": list(self.source_order),
+            "source_cycles": dict(self.source_cycles),
+            "source_restarts": dict(self.source_restarts),
             "sources": self.source_summary(),
         }
