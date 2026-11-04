@@ -32,7 +32,7 @@ class EvolveAISystem:
         root = Path(state_dir)
         root.mkdir(parents=True, exist_ok=True)
         self.registry = ConnectorRegistry()
-        self.evaluator = ExperienceEvaluator(learn_threshold=0.55)
+        # The current SNN objective is general byte-level language modeling, so non-duplicate text remains trainable even when lexical novelty is low. Replace this threshold with a learned task-aware policy as that capability is validated.\n        self.evaluator = ExperienceEvaluator(learn_threshold=0.15)
         self.store = ExperienceStore(str(root / "experiences.sqlite3"))
 
         # Import PyTorch learner lazily so ingestion-only simulations can run
