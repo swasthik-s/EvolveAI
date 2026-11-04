@@ -55,7 +55,7 @@ class OnlineSNNLearner:
         self.save_every = max(1, int(save_every))
         self.replay = deque(maxlen=max(self.batch_size, int(replay_capacity)))
         self.rng = random.Random(seed)
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.accepted_records = 0
         self.updates = 0
         self.last_loss: float | None = None
