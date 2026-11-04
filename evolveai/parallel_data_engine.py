@@ -169,7 +169,7 @@ class ParallelDataEngine:
         workers: int = 2,
         max_record_chars: int = 20000,
         dedupe_window: int = 10000,
-        learn_decisions: Iterable[str] = ("learn_now", "investigate", "compare", "retain"),
+        learn_decisions: Iterable[str] = ("learn_now",),
     ) -> None:
         self.registry = registry
         self.evaluator = evaluator or ExperienceEvaluator()
