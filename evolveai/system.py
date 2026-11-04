@@ -32,7 +32,7 @@ class EvolveAISystem:
         root = Path(state_dir)
         root.mkdir(parents=True, exist_ok=True)
         self.registry = ConnectorRegistry()
-        self.evaluator = ExperienceEvaluator()
+        self.evaluator = ExperienceEvaluator(learn_threshold=0.55)
         self.store = ExperienceStore(str(root / "experiences.sqlite3"))
 
         # Import PyTorch learner lazily so ingestion-only simulations can run
