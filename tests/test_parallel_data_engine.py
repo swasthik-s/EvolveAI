@@ -82,6 +82,7 @@ class ParallelDataEngineTests(unittest.TestCase):
                     registry,
                     store=ExperienceStore(str(Path(tmp) / "pde.db")),
                     learner=learner,
+                    learn_decisions=("learn_now", "investigate", "compare", "retain"),
                 )
                 status = await engine.run()
                 self.assertEqual(status["learner_handoffs"], len(received))
