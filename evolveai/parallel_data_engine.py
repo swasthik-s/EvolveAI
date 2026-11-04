@@ -295,7 +295,10 @@ class ParallelDataEngine:
             asyncio.create_task(self._produce(self.registry.get(sid)), name=f"source:{sid}")
             for sid in ids
         ]
-        consumer = asyncio.create_task(self._consume(), name="pde-consumer")
+        consumers = [
+            asyncio.create_task(self._consume(), name=f"pde-consumer:{index}")
+            for index in range(self.workers)
+        ]
         try:
             if max_records is None:
                 await asyncio.gather(*producers)
@@ -309,8 +312,9 @@ class ParallelDataEngine:
                 await asyncio.gather(*producers, return_exceptions=True)
             await self._queue.join()
         finally:
-            await self._queue.put(self._stop)
-            await consumer
+            for _ in consumers:
+                await self._queue.put(self._stop)
+            await asyncio.gather(*consumers)
         return self.status()
 
     def status(self) -> dict[str, Any]:
