@@ -58,6 +58,8 @@ The dashboard includes a circuit-board overview, engine test console, memory add
 
 ## Local development
 
+The user interface is a Next.js chat app. In development, Next proxies `/api/*` to the Python API at `http://127.0.0.1:8000` (override with `EVOLVEAI_DEV_API_ORIGIN`). On Vercel that proxy is disabled and `/api/chat` is the Python function.
+
 Frontend:
 
 ```bash
@@ -65,7 +67,7 @@ npm install
 npm run dev
 ```
 
-Python API:
+Python API (second terminal):
 
 ```bash
 python -m venv .venv
@@ -73,6 +75,18 @@ python -m venv .venv
 # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt uvicorn
 uvicorn api.chat:app --reload
+```
+
+Open the Next app (port 3000). The chat keeps threads in `localStorage` (`evolveai.threads.v1` is migrated once into `evolveai.threads.v2:`). You can switch light and dark themes, collapse the sidebar, and on a narrow screen open it as a drawer.
+
+Chat requests send `stream: true` and render server-sent events (`status`, `delta`, `done`). Clients that omit `stream` still receive one JSON object, which is what the admin dashboard uses. File attachments are sent on the same chat request. The API stores each file's name, type, size, sha256, and a text excerpt in the activity journal; it does not write file bytes to disk or execute them. Images are acknowledged and not interpreted.
+
+Checks:
+
+```bash
+npm run typecheck
+npm run lint
+npm run build
 ```
 
 Admin dashboard (in a second terminal):

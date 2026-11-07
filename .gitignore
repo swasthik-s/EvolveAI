@@ -6,3 +6,8 @@ venv/
 .env
 data/
 *.db
+node_modules/
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
