@@ -36,8 +36,7 @@ retention policy, and durable checkpoint storage before enabling this path.
 Install the existing SNN requirements plus Hugging Face Datasets:
 
 ~~~bash
-pip install -r requirements-snn.txt
-pip install 'datasets>=3.0,<5.0'
+pip install -r snn/requirements.txt
 ~~~
 
 Train continuously from several approved streams:
