@@ -46,8 +46,8 @@ class AdaptiveLIFNetwork(nn.Module):
         # Isolated initialization does not perturb the host RNG.
         with torch.random.fork_rng(devices=[]):
             torch.manual_seed(int(seed))
-            self.input_weights = nn.Parameter(torch.randn(vocab_size, hidden_size) * (1.0 / vocab_size) ** 0.5)
-            self.recurrent_weights = nn.Parameter(torch.randn(hidden_size, hidden_size) * (1.0 / hidden_size) ** 0.5)
+            self.input_weights = nn.Parameter(torch.randn(vocab_size, hidden_size) * 0.35)
+            self.recurrent_weights = nn.Parameter(torch.randn(hidden_size, hidden_size) * 0.08)
             self.readout_weights = nn.Parameter(torch.randn(hidden_size, vocab_size) * 0.02)
             self.readout_bias = nn.Parameter(torch.zeros(vocab_size))
         with torch.no_grad():
